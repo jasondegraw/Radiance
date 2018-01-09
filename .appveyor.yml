@@ -7,6 +7,10 @@ configuration: Release
 init:
   - git config --global core.autocrlf input
 
+install:
+  - set QTDIR=C:\Qt\5.9.2\msvc2017_64
+  - set PATH=%PATH%;%QTDIR%\bin
+
 before_build:
   - mkdir build
   - cd build
