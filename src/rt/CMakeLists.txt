@@ -2,16 +2,16 @@ set(VERSION_FILE "${radiance_BINARY_DIR}/src/rt/Version.c")
 create_version_file("${VERSION_FILE}")
 
 add_library(radiance
-	ambcomp.c ambient.c ambio.c aniso.c ashikhmin.c data.c dielectric.c fprism.c freeobjmem.c 
-      	func.c glass.c initotypes.c m_alias.c m_brdf.c m_bsdf.c m_clip.c m_direct.c
-      	m_mirror.c m_mist.c mx_func.c mx_data.c noise3.c normal.c o_face.c o_cone.c
-      	o_instance.c o_mesh.c p_data.c p_func.c preload.c raytrace.c renderopts.c
-      	source.c sphere.c srcobstr.c srcsupp.c srcsamp.c t_data.c t_func.c text.c
-      	pmap.c pmapsrc.c pmapmat.c pmaprand.c pmapio.c 
-      	pmapbias.c pmapparm.c pmapcontrib.c pmapamb.c pmapray.c pmapopt.c 
-      	pmapdata.c pmapdiag.c pmaptype.c pmutil.c pmcontrib2.c
-		../common/random.h ../common/platform.h func.c
-      	"${VERSION_FILE}" virtuals.c ../common/paths.c)
+            ambcomp.c ambient.c ambio.c aniso.c ashikhmin.c data.c dielectric.c fprism.c freeobjmem.c 
+            func.c glass.c initotypes.c m_alias.c m_brdf.c m_bsdf.c m_clip.c m_direct.c
+            m_mirror.c m_mist.c mx_func.c mx_data.c noise3.c normal.c o_face.c o_cone.c
+            o_instance.c o_mesh.c p_data.c p_func.c preload.c raytrace.c renderopts.c
+            source.c sphere.c srcobstr.c srcsupp.c srcsamp.c t_data.c t_func.c text.c
+            pmap.c pmapsrc.c pmapmat.c pmaprand.c pmapio.c 
+            pmapbias.c pmapparm.c pmapcontrib.c pmapamb.c pmapray.c pmapopt.c 
+            pmapdata.c pmapdiag.c pmaptype.c pmutil.c pmcontrib2.c
+            ../common/random.h ../common/platform.h func.c
+            "${VERSION_FILE}" virtuals.c ../common/paths.c)
 
 if(WIN32)
   set(rayp_SOURCES raypwin.c)
@@ -78,22 +78,24 @@ if(NOT BUILD_HEADLESS)
   get_target_property(GIF_PLUGIN Qt5::QGifPlugin LOCATION)
   get_target_property(ICO_PLUGIN Qt5::QICOPlugin LOCATION)
   get_target_property(JPEG_PLUGIN Qt5::QJpegPlugin LOCATION)
-  get_target_property(MNG_PLUGIN Qt5::QMngPlugin LOCATION)
+  #get_target_property(MNG_PLUGIN Qt5::QMngPlugin LOCATION)
   get_target_property(TIFF_PLUGIN Qt5::QTiffPlugin LOCATION)
   install(PROGRAMS "${GIF_PLUGIN}" DESTINATION bin/plugins/imageformats)
   install(PROGRAMS "${ICO_PLUGIN}" DESTINATION bin/plugins/imageformats)
   install(PROGRAMS "${JPEG_PLUGIN}" DESTINATION bin/plugins/imageformats)
-  install(PROGRAMS "${MNG_PLUGIN}" DESTINATION bin/plugins/imageformats)
+  #install(PROGRAMS "${MNG_PLUGIN}" DESTINATION bin/plugins/imageformats)
   install(PROGRAMS "${TIFF_PLUGIN}" DESTINATION bin/plugins/imageformats)
   install(FILES ${CMAKE_SOURCE_DIR}/InstallRules/qt.conf DESTINATION bin)
 
-  if(APPLE OR WIN32)
-    if(WIN32)
-      get_target_property(QPA_PLUGIN Qt5::QWindowsIntegrationPlugin LOCATION)
-    elseif(APPLE)
-      get_target_property(QPA_PLUGIN Qt5::QCocoaIntegrationPlugin LOCATION)
-    endif()
-
+  if(WIN32)
+    get_target_property(QPA_PLUGIN Qt5::QWindowsIntegrationPlugin LOCATION)
+    install(PROGRAMS "${QPA_PLUGIN}" DESTINATION bin/plugins/platforms)
+    set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+    include(InstallRequiredSystemLibraries)
+    #install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION "./" COMPONENT Libraries)
+  elseif(APPLE)
+    get_target_property(QPA_PLUGIN Qt5::QCocoaIntegrationPlugin LOCATION)
     install(PROGRAMS "${QPA_PLUGIN}" DESTINATION bin/plugins/platforms)
   endif()
+
 endif()

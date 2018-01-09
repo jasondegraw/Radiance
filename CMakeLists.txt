@@ -16,6 +16,8 @@ include(CTest)
 
 option(BUILD_SHARED_LIBS "Build radiance using shared libraries?" OFF)
 option(BUILD_HEADLESS "Build radiance without any GUI components?" OFF)
+option(BUILD_LIBTIFF "Build libtiff?" OFF)
+option(BUILD_PACKAGE "Build the radiance installer package?" OFF)
 
 option(CPACK_NREL_SUPPORT "Include OpenStudio ToolFinder Help?" OFF)
 
@@ -41,6 +43,27 @@ if(NOT WIN32)
   set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY 1)
   install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/doc/man/ DESTINATION man)
   set(qt_plugin_term "PLUGIN")
+endif()
+
+if(BUILD_LIBTIFF)
+  include(ExternalProject)
+  #set(LIBTIFF_URL ${CMAKE_SOURCE_DIR}/tiff-4.0.8.tar.gz)
+  set(LIBTIFF_URL ftp://download.osgeo.org/libtiff/tiff-4.0.8.tar.gz)
+  if(WIN32)
+    ExternalProject_Add(libtiff
+      URL ${LIBTIFF_URL}
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -G "NMake Makefiles" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ../libtiff
+      BUILD_COMMAND nmake
+      INSTALL_COMMAND "")
+    set(TIFF_LIBRARY ${CMAKE_BINARY_DIR}/libtiff-prefix/src/libtiff-build/libtiff/tiff.lib)
+  else()
+    ExternalProject_Add(libtiff
+      URL ${LIBTIFF_URL}
+      CONFIGURE_COMMAND ${CMAKE_COMMAND} -G "Unix Makefiles" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release ../libtiff
+      BUILD_COMMAND make
+      INSTALL_COMMAND "")
+  endif()
+  set(TIFF_INCLUDE_DIR ${CMAKE_BINARY_DIR}/libtiff/src/libtiff/libtiff)
 endif()
 
 if (WIN32)
@@ -71,18 +94,13 @@ if(APPLE)
   SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=10.6")
 endif()
 
-IF( BUILD_PACKAGE )
-  INCLUDE(radianceCPack.cmake )
-ENDIF( BUILD_PACKAGE )
-
 set(CPACK_PACKAGE_VERSION_MAJOR 5)
 set(CPACK_PACKAGE_VERSION_MINOR 0)
 set(CPACK_PACKAGE_VERSION_PATCH a.8)
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Radiance")
-SET(CPACK_RESOURCE_FILE_WELCOME "${radiance_SOURCE_DIR}/Welcome.txt")
-SET(CPACK_RESOURCE_FILE_README "${radiance_SOURCE_DIR}/README.txt")
-SET(CPACK_RESOURCE_FILE_LICENSE "${radiance_SOURCE_DIR}/License.txt") 
-
+set(CPACK_RESOURCE_FILE_WELCOME "${radiance_SOURCE_DIR}/Welcome.txt")
+set(CPACK_RESOURCE_FILE_README "${radiance_SOURCE_DIR}/README.txt")
+set(CPACK_RESOURCE_FILE_LICENSE "${radiance_SOURCE_DIR}/License.txt") 
 
 include(CPack)
 
@@ -91,7 +109,7 @@ if(NOT BUILD_HEADLESS)
   find_package(X11)
 endif()
 
-SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)
 
 if(WIN32 AND "${CMAKE_C_COMPILER_ID}" MATCHES "^(Intel)$")
   set(_INTEL_WINDOWS 1)
