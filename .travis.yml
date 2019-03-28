@@ -11,7 +11,7 @@ before_install:
 install:
   - mkdir build
   - cd build
-  - cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_HEADLESS=On ..
+  - cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_HEADLESS=On -DBUILD_LIBTIFF=On ..
   - make -j 4
   - make install
   - cd ..

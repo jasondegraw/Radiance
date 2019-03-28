@@ -70,7 +70,7 @@ endif()
 if(BUILD_LIBTIFF)
   include(ExternalProject)
   set(LIBTIFF_URL http://download.osgeo.org/libtiff/tiff-4.0.9.tar.gz)
-  set(LIBTIFF_MD5 54BAD211279CC93EB4FCA31BA9BFDC79)
+  set(LIBTIFF_MD5 54bad211279cc93eb4fca31ba9bfdc79)
   if(WIN32)
     ExternalProject_Add(libtiff
       URL ${LIBTIFF_URL}
