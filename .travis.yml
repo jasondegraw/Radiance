@@ -7,7 +7,7 @@ os:
 dist: trusty
 
 env:
-  - RAYPAYTH=.:/usr/local/lib
+  - RAYPATH=.:/usr/local/lib
 
 compiler:
   - clang
