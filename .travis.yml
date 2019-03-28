@@ -17,5 +17,5 @@ install:
   - cd ..
 script:
   - cd build
-#  - ctest
+  - ctest
   - cd ..
