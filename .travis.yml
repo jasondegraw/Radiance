@@ -6,6 +6,9 @@ os:
 
 dist: trusty
 
+env:
+  - RAYPAYTH=.:/usr/local/lib
+
 compiler:
   - clang
   - gcc
