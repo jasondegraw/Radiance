@@ -30,6 +30,13 @@ install:
   - cd ..
 
 script:
-  - cd build
-  - ctest
-  - cd ..
+  - cd test/cal
+  - make
+  - cd ../gen
+  - make
+  - cd ../util
+  - make
+  - cd ../..
+#  - cd build
+#  - ctest
+#  - cd ..
