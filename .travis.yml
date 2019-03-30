@@ -39,6 +39,8 @@ script:
   - make
   - cd ../util
   - make
+  - cd ../renders
+  - make
   - cd ../..
 #  - cd build
 #  - ctest
