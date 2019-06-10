@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: dielectric.c,v 2.28 2015/10/28 15:45:58 greg Exp $";
+static const char	RCSid[] = "$Id: dielectric.c,v 2.30 2019/04/19 19:01:32 greg Exp $";
 #endif
 /*
  *  dielectric.c - shading function for transparent materials.
@@ -74,8 +74,6 @@ m_dielectric(	/* color a ray which hit a dielectric interface */
 	COLOR  ctrans;
 	COLOR  talb;
 	int  hastexture;
-	double  transdist=0, transtest=0;
-	double  mirdist=0, mirtest=0;
 	int	flatsurface;
 	double  refl, trans;
 	FVECT  dnorm;
@@ -206,10 +204,8 @@ m_dielectric(	/* color a ray which hit a dielectric interface */
 						/* virtual distance */
 				if (flatsurface ||
 					(1.-FTINY <= nratio) &
-						(nratio <= 1.+FTINY)) {
-					transtest = 2*bright(p.rcol);
-					transdist = r->rot + p.rt;
-				}
+						(nratio <= 1.+FTINY))
+					r->rxt = r->rot + raydistance(&p);
 			}
 		}
 	}
@@ -227,19 +223,13 @@ m_dielectric(	/* color a ray which hit a dielectric interface */
 		rayvalue(&p);			/* reflected ray value */
 
 		multcolor(p.rcol, p.rcoef);	/* color contribution */
+		copycolor(r->mcol, p.rcol);
 		addcolor(r->rcol, p.rcol);
 						/* virtual distance */
-		if (flatsurface) {
-			mirtest = 2*bright(p.rcol);
-			mirdist = r->rot + p.rt;
-		}
+		r->rmt = r->rot;
+		if (flatsurface)
+			r->rmt += raydistance(&p);
 	}
-				/* check distance to return */
-	d1 = bright(r->rcol);
-	if (transtest > d1)
-		r->rt = transdist;
-	else if (mirtest > d1)
-		r->rt = mirdist;
 				/* rayvalue() computes absorption */
 	return(1);
 }

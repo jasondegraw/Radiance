@@ -7,13 +7,14 @@
        supported by the Swiss National Science Foundation (SNSF, #147053)
    ======================================================================
    
-   $Id: pmapooc.c,v 1.2 2017/08/14 21:12:10 rschregle Exp $
+   $Id: pmapooc.c,v 1.5 2018/11/08 00:54:07 greg Exp $
 */
 
 
 
 #include "pmapdata.h"   /* Includes pmapooc.h */
 #include "source.h"
+#include "otspecial.h"
 #include "oocsort.h"
 #include "oocbuild.h"
 
@@ -214,20 +215,24 @@ int OOC_FilterPhoton (void *p, void *fd)
        DOT(filtData->norm, photon->norm) <= PMAP_NORM_TOL * 127 * frandom())
       return 0;
       
-   if (isContribPmap(pmap) && pmap -> srcContrib) {
-      /* Lookup in contribution photon map */
-      OBJREC *srcMod; 
-      const int srcIdx = photonSrcIdx(pmap, photon);
+   if (isContribPmap(pmap)) {
+      /* Lookup in contribution photon map; filter according to emitting
+       * light source if contrib list set, else accept all */
+       
+      if (pmap -> srcContrib) {
+         OBJREC *srcMod; 
+         const int srcIdx = photonSrcIdx(pmap, photon);
       
-      if (srcIdx < 0 || srcIdx >= nsources)
-         error(INTERNAL, "invalid light source index in photon map");
+         if (srcIdx < 0 || srcIdx >= nsources)
+            error(INTERNAL, "invalid light source index in photon map");
       
-      srcMod = findmaterial(source [srcIdx].so);
+         srcMod = findmaterial(source [srcIdx].so);
 
-      /* Reject photon if contributions from light source which emitted it
-       * are not sought */
-      if (!lu_find(pmap -> srcContrib, srcMod -> oname) -> data)
-         return 0;
+         /* Reject photon if contributions from light source which emitted
+          * it are not sought */
+         if (!lu_find(pmap -> srcContrib, srcMod -> oname) -> data)
+            return 0;
+      }
 
       /* Reject non-caustic photon if lookup for caustic contribs */
       if (pmap -> lookupCaustic && !photon -> caustic)
@@ -252,8 +257,9 @@ void OOC_FindPhotons (struct PhotonMap *pmap, const FVECT pos, const FVECT norm)
          
    /* Set up filter callback */
    filtData.pmap = pmap;
-   VCOPY(n, norm);
-   filtData.norm = n;
+   if (norm)
+      VCOPY(n, norm);
+   filtData.norm = norm ? n : NULL;
    filt.data = &filtData;
    filt.func = OOC_FilterPhoton;
 
@@ -282,8 +288,9 @@ void OOC_Find1Photon (struct PhotonMap* pmap, const FVECT pos,
    
    /* Set up filter callback */
    filtData.pmap = pmap;
-   VCOPY(n, norm);
-   filtData.norm = n;
+   if (norm)
+      VCOPY(n, norm);
+   filtData.norm = norm ? n : NULL;   
    filt.data = &filtData;
    filt.func = OOC_FilterPhoton;
    

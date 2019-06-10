@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: bsdf.c,v 2.54 2017/05/15 22:44:10 greg Exp $";
+static const char RCSid[] = "$Id: bsdf.c,v 2.57 2019/03/08 03:42:12 greg Exp $";
 #endif
 /*
  *  bsdf.c
@@ -515,8 +515,7 @@ SDsampComponent(SDValue *sv, FVECT ioVec, double randX, SDComponent *sdc)
 		c_cmix(&sv->spec, d, &sv->spec, coef[n], &sdc->cspec[n]);
 		d += coef[n];
 	}
-					/* make sure everything is set */
-	c_ccvt(&sv->spec, C_CSXY+C_CSSPEC);
+	c_ccvt(&sv->spec, C_CSXY);	/* make sure (x,y) is set */
 	return SDEnone;
 }
 
@@ -646,10 +645,10 @@ SDevalBSDF(SDValue *sv, const FVECT outVec, const FVECT inVec, const SDData *sd)
 	} else if (!(inFront | outFront)) {
 		*sv = sd->rLambBack;
 		sdf = sd->rb;
-	} else if (outFront) {
+	} else if (inFront) {
 		*sv = sd->tLamb;
 		sdf = (sd->tf != NULL) ? sd->tf : sd->tb;
-	} else /* inFront & !outFront */ {
+	} else /* outFront & !inFront */ {
 		*sv = sd->tLamb;
 		sdf = (sd->tb != NULL) ? sd->tb : sd->tf;
 	}
@@ -665,8 +664,7 @@ SDevalBSDF(SDValue *sv, const FVECT outVec, const FVECT inVec, const SDData *sd)
 			sv->cieY += coef[nch];
 		}
 	}
-					/* make sure everything is set */
-	c_ccvt(&sv->spec, C_CSXY+C_CSSPEC);
+	c_ccvt(&sv->spec, C_CSXY);	/* make sure (x,y) is set */
 	return SDEnone;
 }
 
@@ -791,7 +789,7 @@ SDsampBSDF(SDValue *sv, FVECT ioVec, double randX, int sflags, const SDData *sd)
 		randX -= sd->tLamb.cieY;
 	}
 					/* else one of cumulative dist. */
-	for (i = 0; i < n && randX > cdarr[i]->cTotal; i++)
+	for (i = 0; i < n && randX >= cdarr[i]->cTotal; i++)
 		randX -= cdarr[i]->cTotal;
 	if (i >= n)
 		return SDEinternal;
@@ -816,8 +814,7 @@ SDsampBSDF(SDValue *sv, FVECT ioVec, double randX, int sflags, const SDData *sd)
 done:
 	if (cdarr != NULL)
 		free(cdarr);
-					/* make sure everything is set */
-	c_ccvt(&sv->spec, C_CSXY+C_CSSPEC);
+	c_ccvt(&sv->spec, C_CSXY);	/* make sure (x,y) is set */
 	return SDEnone;
 }
 

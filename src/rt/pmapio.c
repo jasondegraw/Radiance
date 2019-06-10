@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: pmapio.c,v 2.10 2017/08/14 21:12:10 rschregle Exp $";
+static const char RCSid[] = "$Id: pmapio.c,v 2.12 2018/08/02 18:33:49 greg Exp $";
 #endif
 
 /* 
@@ -12,7 +12,7 @@ static const char RCSid[] = "$Id: pmapio.c,v 2.10 2017/08/14 21:12:10 rschregle 
        supported by the Swiss National Science Foundation (SNSF, #147053)
    ======================================================================
    
-   $Id: pmapio.c,v 2.10 2017/08/14 21:12:10 rschregle Exp $    
+   $Id: pmapio.c,v 2.12 2018/08/02 18:33:49 greg Exp $    
 */
 
 
@@ -110,7 +110,9 @@ void savePhotonMap (const PhotonMap *pmap, const char *fname,
          PhotonPrimary *prim = pmap -> primaries + i;      
 
          putint(prim -> srcIdx, sizeof(prim -> srcIdx), file);
+#ifdef PMAP_PRIMARYDIR         
          putint(prim -> dir, sizeof(prim -> dir), file);
+#endif         
 #ifdef PMAP_PRIMARYPOS         
          for (j = 0; j < 3; j++)
             putflt(prim -> pos [j], file);
@@ -139,7 +141,7 @@ void savePhotonMap (const PhotonMap *pmap, const char *fname,
 PhotonMapType loadPhotonMap (PhotonMap *pmap, const char *fname)
 {
    PhotonMapType  ptype = PMAP_TYPE_NONE;
-   char           format [128];
+   char           format [MAXFMTLEN];
    unsigned long  i, j;
    FILE           *file;
 
@@ -207,8 +209,9 @@ PhotonMapType loadPhotonMap (PhotonMap *pmap, const char *fname)
          PhotonPrimary *prim = pmap -> primaries + i;
          
          prim -> srcIdx = getint(sizeof(prim -> srcIdx), file);
-         
+#ifdef PMAP_PRIMARYDIR         
          prim -> dir = getint(sizeof(prim -> dir), file);
+#endif         
 #ifdef PMAP_PRIMARYPOS            
          for (j = 0; j < 3; j++)
             prim -> pos [j] = getflt(file);

@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: raytrace.c,v 2.72 2018/01/09 05:01:15 greg Exp $";
+static const char RCSid[] = "$Id: raytrace.c,v 2.78 2019/04/03 16:04:33 greg Exp $";
 #endif
 /*
  *  raytrace.c - routines for tracing and shading rays.
@@ -116,10 +116,10 @@ rayorigin(		/* start new ray from old one */
 		if (photonMapping && rt != TRANS)
 			return(-1);
 	}
-	if (maxdepth <= 0 && rc != NULL) {	/* Russian roulette */
+	if ((maxdepth <= 0) & (rc != NULL)) {	/* Russian roulette */
 		if (minweight <= 0.0)
 			error(USER, "zero ray weight in Russian roulette");
-		if (maxdepth < 0 && r->rlvl > -maxdepth)
+		if ((maxdepth < 0) & (r->rlvl > -maxdepth))
 			return(-1);		/* upper reflection limit */
 		if (r->rweight >= minweight)
 			return(0);
@@ -130,7 +130,7 @@ rayorigin(		/* start new ray from old one */
 		r->rweight = minweight;
 		return(0);
 	}
-	return(r->rweight >= minweight && r->rlvl <= abs(maxdepth) ? 0 : -1);
+	return((r->rweight >= minweight) & (r->rlvl <= abs(maxdepth)) ? 0 : -1);
 }
 
 
@@ -145,10 +145,11 @@ rayclear(			/* clear a ray for (re)evaluation */
 	r->robj = OVOID;
 	r->ro = NULL;
 	r->rox = NULL;
-	r->rt = r->rot = FHUGE;
+	r->rxt = r->rmt = r->rot = FHUGE;
 	r->pert[0] = r->pert[1] = r->pert[2] = 0.0;
 	r->uv[0] = r->uv[1] = 0.0;
 	setcolor(r->pcol, 1.0, 1.0, 1.0);
+	setcolor(r->mcol, 0.0, 0.0, 0.0);
 	setcolor(r->rcol, 0.0, 0.0, 0.0);
 }
 
@@ -194,8 +195,28 @@ raytrans(			/* transmit ray as is */
 	rayorigin(&tr, TRANS, r, NULL);		/* always continue */
 	VCOPY(tr.rdir, r->rdir);
 	rayvalue(&tr);
+	copycolor(r->mcol, tr.mcol);
 	copycolor(r->rcol, tr.rcol);
-	r->rt = r->rot + tr.rt;
+	r->rmt = r->rot + tr.rmt;
+	r->rxt = r->rot + tr.rxt;
+}
+
+
+int
+raytirrad(			/* irradiance hack */
+	OBJREC	*m,
+	RAY	*r
+)
+{
+	if (ofun[m->otype].flags & (T_M|T_X) && m->otype != MAT_CLIP) {
+		if (istransp(m->otype) || isBSDFproxy(m)) {
+			raytrans(r);
+			return(1);
+		}
+		if (!islight(m->otype))
+			return((*ofun[Lamb.otype].funp)(&Lamb, r));
+	}
+	return(0);		/* not a qualifying surface */
 }
 
 
@@ -205,9 +226,10 @@ rayshade(		/* shade ray r with material mod */
 	int  mod
 )
 {
+	int	tst_irrad = do_irrad && !(r->crtype & ~(PRIMARY|TRANS));
 	OBJREC  *m;
 
-	r->rt = r->rot;			/* preset effective ray length */
+	r->rxt = r->rot;		/* preset effective ray length */
 	for ( ; mod != OVOID; mod = m->omod) {
 		m = objptr(mod);
 		/****** unnecessary test since modifier() is always called
@@ -217,16 +239,9 @@ rayshade(		/* shade ray r with material mod */
 		}
 		******/
 					/* hack for irradiance calculation */
-		if (do_irrad && !(r->crtype & ~(PRIMARY|TRANS)) &&
-				(ofun[m->otype].flags & (T_M|T_X)) &&
-				m->otype != MAT_CLIP) {
-			if (istransp(m->otype) || isBSDFproxy(m)) {
-				raytrans(r);
-				return(1);
-			}
-			if (!islight(m->otype))
-				m = &Lamb;
-		}
+		if (tst_irrad && raytirrad(m, r))
+			return(1);
+
 		if ((*ofun[m->otype].funp)(m, r))
 			return(1);	/* materials call raytexture() */
 	}
@@ -306,6 +321,7 @@ raymixture(		/* mix modifiers */
 )
 {
 	RAY  fr, br;
+	double  mfore, mback;
 	int  foremat, backmat;
 	int  i;
 					/* bound coefficient */
@@ -352,7 +368,14 @@ raymixture(		/* mix modifiers */
 	scalecolor(br.rcol, 1.0-coef);
 	copycolor(r->rcol, fr.rcol);
 	addcolor(r->rcol, br.rcol);
-	r->rt = bright(fr.rcol) > bright(br.rcol) ? fr.rt : br.rt;
+	scalecolor(fr.mcol, coef);
+	scalecolor(br.mcol, 1.0-coef);
+	copycolor(r->mcol, fr.mcol);
+	addcolor(r->mcol, br.mcol);
+	mfore = bright(fr.mcol); mback = bright(br.mcol);
+	r->rmt = mfore > mback ? fr.rmt : br.rmt;
+	r->rxt = bright(fr.rcol)-mfore > bright(br.rcol)-mback ?
+			fr.rxt : br.rxt;
 	return(1);
 }
 
@@ -380,22 +403,23 @@ raycontrib(		/* compute (cumulative) ray contribution */
 	int  flags
 )
 {
-	double	eext[3];
-	int	i;
+	static int	warnedPM = 0;
 
-	eext[0] = eext[1] = eext[2] = 0.;
 	rc[0] = rc[1] = rc[2] = 1.;
 
 	while (r != NULL && r->crtype&flags) {
-		for (i = 3; i--; ) {
+		int	i = 3;
+		while (i--)
 			rc[i] *= colval(r->rcoef,i);
-			eext[i] += r->rot * colval(r->cext,i);
+					/* check for participating medium */
+		if (!warnedPM && (bright(r->cext) > FTINY) |
+				(bright(r->albedo) > FTINY)) {
+			error(WARNING,
+	"ray contribution calculation does not support participating media");
+			warnedPM++;
 		}
 		r = r->parent;
 	}
-	for (i = 3; i--; )
-		rc[i] *= (eext[i] <= FTINY) ? 1. :
-				(eext[i] > 92.) ? 0. : exp(-eext[i]);
 }
 
 

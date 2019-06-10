@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# RCSid $Id: genBSDF.pl,v 2.78 2017/06/19 03:45:57 greg Exp $
+# RCSid $Id: genBSDF.pl,v 2.83 2019/06/10 13:58:49 greg Exp $
 #
 # Compute BSDF based on geometry and material description
 #
@@ -190,7 +190,8 @@ my $CIEuv =	'Xi=.5141*Ri+.3239*Gi+.1620*Bi;' .
 		'Yi=.2651*Ri+.6701*Gi+.0648*Bi;' .
 		'Zi=.0241*Ri+.1229*Gi+.8530*Bi;' .
 		'den=Xi+15*Yi+3*Zi;' .
-		'uprime=4*Xi/den;vprime=9*Yi/den;' ;
+		'uprime=if(Yi,4*Xi/den,4/19);' .
+		'vprime=if(Yi,9*Yi/den,9/19);' ;
 my $FEPS = 1e-5;
 my $ns = 2**$ttlog2;
 my $nx = int(sqrt($nsamp*($dim[1]-$dim[0])/($dim[3]-$dim[2])) + 1);
@@ -204,7 +205,7 @@ if ( !defined $recovery ) {
 	}
 	close MYAVH;
 	# Generate octree
-	system "oconv -w -f $radscn > $octree";
+	system "oconv -w $radscn > $octree";
 	die "Could not compile scene\n" if ( $? );
 	# Add MGF description if requested
 	if ( $geout ) {
@@ -322,7 +323,10 @@ sub do_ttree_dir {
 				qq{| rcalc -e "r1=rand(.8681*recno-.673892)" } .
 				qq{-e "r2=rand(-5.37138*recno+67.1737811)" } .
 				qq{-e "r3=rand(+3.17603772*recno+83.766771)" } .
-				qq{-e "Dx=1-2*(\$1+r1)/$ns;Dy:0;Dz=sqrt(1-Dx*Dx)" } .
+				qq{-e "r4=rand(-1.5839226*recno-59.82712)" } .
+				qq{-e "Dx=1-2*(\$1+r1)/$ns" } .
+				qq{-e "Dy=min(1/$ns,sqrt(1-Dx*Dx))*(2*r2-1)" } .
+				qq{-e "Dz=sqrt(1-Dx*Dx-Dy*Dy)" } .
 				qq{-e "xp=(\$3+r2)*(($dim[1]-$dim[0])/$nx)+$dim[0]" } .
 				qq{-e "yp=(\$2+r3)*(($dim[3]-$dim[2])/$ny)+$dim[2]" } .
 				qq{-e "zp=$dim[5-$forw]" -e "myDz=Dz*($forw*2-1)" } .
@@ -334,9 +338,12 @@ sub do_ttree_dir {
 				qq{| rcalc -e 'r1=rand(.8681*recno-.673892)' } .
 				qq{-e 'r2=rand(-5.37138*recno+67.1737811)' } .
 				qq{-e 'r3=rand(+3.17603772*recno+83.766771)' } .
-				qq{-e 'Dx=1-2*(\$1+r1)/$ns;Dy:0;Dz=sqrt(1-Dx*Dx)' } .
-				qq{-e 'xp=(\$3+r2)*(($dim[1]-$dim[0])/$nx)+$dim[0]' } .
-				qq{-e 'yp=(\$2+r3)*(($dim[3]-$dim[2])/$ny)+$dim[2]' } .
+				qq{-e 'r4=rand(-1.5839226*recno-59.82712)' } .
+				qq{-e 'Dx=1-2*(\$1+r1)/$ns' } .
+				qq{-e 'Dy=min(1/$ns,sqrt(1-Dx*Dx))*(2*r2-1)' } .
+				qq{-e 'Dz=sqrt(1-Dx*Dx-Dy*Dy)' } .
+				qq{-e 'xp=(\$3+r3)*(($dim[1]-$dim[0])/$nx)+$dim[0]' } .
+				qq{-e 'yp=(\$2+r4)*(($dim[3]-$dim[2])/$ny)+$dim[2]' } .
 				qq{-e 'zp=$dim[5-$forw]' -e 'myDz=Dz*($forw*2-1)' } .
 				qq{-e '\$1=xp-Dx;\$2=yp-Dy;\$3=zp-myDz' } .
 				qq{-e '\$4=Dx;\$5=Dy;\$6=myDz' -of } .

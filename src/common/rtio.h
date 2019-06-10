@@ -1,4 +1,4 @@
-/* RCSid $Id: rtio.h,v 3.14 2016/12/13 18:38:35 greg Exp $ */
+/* RCSid $Id: rtio.h,v 3.19 2018/06/01 16:38:37 greg Exp $ */
 /*
  *	Radiance i/o and string routines
  */
@@ -13,9 +13,17 @@
 
 #ifdef getc_unlocked		/* avoid horrendous overhead of flockfile */
 #undef getc
+#undef getchar
 #undef putc
+#undef putchar
+#undef feof
+#undef ferror
 #define getc    getc_unlocked
+#define getchar	getchar_unlocked
 #define putc    putc_unlocked
+#define putchar	putchar_unlocked
+#define feof	feof_unlocked
+#define ferror	ferror_unlocked
 #endif
 
 #ifdef __cplusplus
@@ -88,6 +96,11 @@ extern int	isfltd(char *s, char *ds);
 extern float *	matchlamp(char *s);
 extern int	loadlamps(char *file);
 extern void	freelamps(void);
+
+#ifndef strlcpy				/* defined in option strlcpy.c */
+extern size_t	strlcpy(char *dst, const char *src, size_t siz);
+extern size_t	strlcat(char *dst, const char *src, size_t siz);
+#endif
 
 #ifdef __cplusplus
 }

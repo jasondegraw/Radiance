@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: bsdf2klems.c,v 2.24 2017/02/17 22:31:49 greg Exp $";
+static const char RCSid[] = "$Id: bsdf2klems.c,v 2.26 2019/03/19 22:03:24 greg Exp $";
 #endif
 /*
  * Load measured BSDF interpolant and write out as XML file with Klems matrix.
@@ -31,7 +31,7 @@ static const char	klems_half[] = "LBNL/Klems Half";
 static const char	klems_quarter[] = "LBNL/Klems Quarter";
 static const char	*kbasis = klems_full;
 				/* number of BSDF samples per patch */
-static int		npsamps = 256;
+static int		npsamps = 1024;
 				/* limit on number of RBF lobes */
 static int		lobe_lim = 15000;
 				/* progress bar length */
@@ -602,7 +602,15 @@ main(int argc, char *argv[])
 					add_wbsdf("-f", 1);
 					add_wbsdf(argv[i], 1);
 				} else {
-					fcompile(argv[i]);
+					char	*fpath = getpath(argv[i],
+							    getrlibpath(), 0);
+					if (fpath == NULL) {
+						fprintf(stderr,
+						"%s: cannot find file '%s'\n",
+							argv[0], argv[i]);
+						return(1);
+					}
+					fcompile(fpath);
 					single_plane_incident = 0;
 				}
 			} else

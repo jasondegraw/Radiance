@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: rcontrib.c,v 2.30 2017/04/11 17:52:40 greg Exp $";
+static const char RCSid[] = "$Id: rcontrib.c,v 2.35 2019/04/07 16:39:39 greg Exp $";
 #endif
 /*
  * Accumulate ray contributions for a set of materials
@@ -21,15 +21,14 @@ int	dimlist[MAXDIM];		/* sampling dimensions */
 int	ndims = 0;			/* number of sampling dimensions */
 int	samplendx = 0;			/* index for this sample */
 
-static void	trace_contrib(RAY *r);	/* our trace callback */
-void	(*trace)() = trace_contrib;
+void	(*trace)() = NULL;		/* trace call (NULL before rcinit) */
 
 int	do_irrad = 0;			/* compute irradiance? */
 
 int	rand_samp = 1;			/* pure Monte Carlo sampling? */
 
 double	dstrsrc = 0.9;			/* square source distribution */
-double	shadthresh = .03;		/* shadow threshold */
+double	shadthresh = 0.;		/* shadow threshold */
 double	shadcert = .75;			/* shadow certainty */
 int	directrelay = 3;		/* number of source relays */
 int	vspretest = 512;		/* virtual source pretest density */
@@ -52,7 +51,7 @@ double	minweight = 2e-3;		/* minimum ray weight */
 char	*ambfile = NULL;		/* ambient file name */
 COLOR	ambval = BLKCOLOR;		/* ambient value */
 int	ambvwt = 0;			/* initial weight for ambient value */
-double	ambacc = 0;			/* ambient accuracy */
+double	ambacc = 0.;			/* ambient accuracy */
 int	ambres = 256;			/* ambient resolution */
 int	ambdiv = 350;			/* ambient divisions */
 int	ambssamp = 0;			/* ambient super-samples */
@@ -66,6 +65,8 @@ long	waitflush;			/* how long until next flush */
 
 RNUMBER	lastray = 0;			/* last ray number sent */
 RNUMBER	lastdone = 0;			/* last ray output */
+
+static void	trace_contrib(RAY *r);	/* our trace callback */
 
 static void mcfree(void *p) { epfree((*(MODCONT *)p).binv); free(p); }
 
@@ -196,6 +197,7 @@ rcinit(void)
 					/* set shared memory boundary */
 		shm_boundary = strcpy((char *)malloc(16), "SHM_BOUNDARY");
 	}
+	trace = trace_contrib;		/* set up trace call-back */
 	for (i = 0; i < nsources; i++)	/* tracing to sources as well */
 		source[i].sflags |= SFOLLOW;
 	if (yres > 0) {			/* set up flushing & ray counts */
@@ -279,7 +281,7 @@ eval_irrad(FVECT org, FVECT dir)
 	thisray.rmax = 0.0;
 	rayorigin(&thisray, PRIMARY, NULL, NULL);
 					/* pretend we hit surface */
-	thisray.rt = thisray.rot = 1e-5;
+	thisray.rxt = thisray.rot = 1e-5;
 	thisray.rod = 1.0;
 	VCOPY(thisray.ron, dir);
 	VSUM(thisray.rop, org, dir, 1e-4);

@@ -1,4 +1,4 @@
-.\" RCSid "$Id: rpict.1,v 1.21 2016/05/18 12:45:55 rschregle Exp $"
+.\" RCSid "$Id: rpict.1,v 1.25 2019/06/09 17:48:13 rschregle Exp $"
 .TH RPICT 1 2/26/99 RADIANCE
 .SH NAME
 rpict - generate a RADIANCE picture
@@ -540,7 +540,9 @@ Global photon irradiance is evaluated as part of the ambient calculation (see
 above), caustic photon irradiance is evaluated at primary rays, and 
 indirect inscattering in 
 .I mist
-is accounted for by volume photons.
+is accounted for by volume photons. Contribution photons are treated as
+global photons by
+.I rpict.
 .IP
 Additionally specifying 
 .I bwidth2
@@ -557,7 +559,7 @@ in which case the bandwidth, if specified, is ignored, as the nearest photon
 is invariably looked up.
 .IP
 Using direct photons replaces the direct calculation with density estimates
-for debugging and validation of photon emission.       
+for debugging and validation of photon emission.
 .TP
 .BI -am " frac"
 Maximum search radius for photon map lookups.  Without this option, an
@@ -593,14 +595,10 @@ mapping, taking into account the pagesize specified by
 .I \-ac. 
 Note that this is approximate as the number of cache pages is rounded to
 the nearest prime. This allows adapting the cache to the available physical
-memory. In conjunction with the
-.I \-n
-option, this is the cache size
-.I per parallel process. 
-Cache performance is less sensitive to this parameter,
-and reasonable performance can obtained with as few as 10k photons. The
-default is 1M. This option recognises multiplier suffixes (k = 1e3, M =
-1e6), both in upper and lower case.
+memory. Cache performance is less sensitive to this parameter, and reasonable 
+performance can obtained with as few as 10k photons. The default is 1M. This 
+option recognises multiplier suffixes (k = 1e3, M = 1e6), both in upper and 
+lower case.
 .TP
 .BI -me " rext gext bext"
 Set the global medium extinction coefficient to the indicated color,
@@ -664,8 +662,8 @@ is zero, then Russian roulette is used for ray
 termination, and the
 .I -lw
 setting (below) must be positive.
-If N is a negative integer, then this sets the upper limit
-of reflections past which Russian roulette will be used.
+If N is a negative integer, then this limits the maximum
+number of reflections even with Russian roulette.
 In scenes with dielectrics and total internal reflection,
 a setting of 0 (no limit) may cause a stack overflow.
 .TP
@@ -912,4 +910,4 @@ option.
 Greg Ward
 .SH "SEE ALSO"
 getinfo(1), lookamb(1), mkpmap(1), oconv(1), pdfblur(1), pfilt(1), 
-pinterp(1), pmblur(1), printf(3), ra_rgbe(1), rad(1), rtrace(1), rvu(1)
+pinterp(1), pmblur(1), printf(3), ra_rgbe(1), rad(1), rpiece(1), rtpict(1), rtrace(1), rvu(1)

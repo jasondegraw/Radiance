@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: rpict.c,v 2.90 2015/04/22 20:28:16 rschregle Exp $";
+static const char RCSid[] = "$Id: rpict.c,v 2.93 2019/05/04 00:32:47 greg Exp $";
 #endif
 /*
  *  rpict.c - routines and variables for picture generation.
@@ -132,22 +132,6 @@ static double pixvalue(COLOR  col, int  x, int  y);
 static int salvage(char  *oldfile);
 static int pixnumber(int  x, int  y, int  xres, int  yres);
 
-
-
-#ifdef RHAS_STAT
-#include  <sys/types.h>
-#include  <sys/stat.h>
-int
-file_exists(fname)				/* ordinary file exists? */
-char  *fname;
-{
-	struct stat  sbuf;
-	if (stat(fname, &sbuf) < 0) return(0);
-	return((sbuf.st_mode & S_IFREG) != 0);
-}
-#else
-#define  file_exists(f)	(access(f,F_OK)==0)
-#endif
 
 
 void
@@ -304,23 +288,27 @@ rpict(			/* generate image(s) */
 			break;
 		pctdone = 0.0;
 		if (pout != NULL) {
+			int	myfd;
+			close(1);			/* reassign stdout */
 			sprintf(fbuf, pout, seq);
-			if (file_exists(fbuf)) {
-				if (prvr != NULL || !strcmp(fbuf, pout)) {
+		tryagain:
+			errno = 0;			/* exclusive open */
+			if ((myfd = open(fbuf, O_WRONLY|O_CREAT|O_EXCL, 0666)) < 0) {
+				if ((errno != EEXIST) | (prvr != NULL) ||
+						!strcmp(fbuf, pout)) {
 					sprintf(errmsg,
-						"output file \"%s\" exists",
+						"cannot open output file \"%s\"",
 						fbuf);
-					error(USER, errmsg);
+					error(SYSTEM, errmsg);
 				}
 				setview(&ourview);
 				continue;		/* don't clobber */
 			}
-			if (freopen(fbuf, "w", stdout) == NULL) {
-				sprintf(errmsg,
-					"cannot open output file \"%s\"", fbuf);
-				error(SYSTEM, errmsg);
+			if (myfd != 1) {
+				unlink(fbuf);
+				goto tryagain;		/* leave it open */
 			}
-			SET_FILE_BINARY(stdout);
+			SET_FD_BINARY(1);
 			dupheader();
 		}
 		hres = hresolu; vres = vresolu; pa = pixaspect;
@@ -746,7 +734,7 @@ pixvalue(		/* compute pixel value */
 
 	copycolor(col, thisray.rcol);		/* return color */
 
-	return(thisray.rt);			/* return distance */
+	return(raydistance(&thisray));		/* return distance */
 }
 
 

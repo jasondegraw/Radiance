@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: pmapdata.c,v 2.18 2017/08/14 21:12:10 rschregle Exp $";
+static const char RCSid[] = "$Id: pmapdata.c,v 2.21 2019/05/10 17:43:22 rschregle Exp $";
 #endif
 
 /* 
@@ -17,7 +17,7 @@ static const char RCSid[] = "$Id: pmapdata.c,v 2.18 2017/08/14 21:12:10 rschregl
        supported by the Swiss National Science Foundation (SNSF, #147053)
    ==========================================================================
    
-   $Id: pmapdata.c,v 2.18 2017/08/14 21:12:10 rschregle Exp $
+   $Id: pmapdata.c,v 2.21 2019/05/10 17:43:22 rschregle Exp $
 */
 
 
@@ -44,6 +44,15 @@ PhotonMap *photonMaps [NUM_PMAP_TYPES] = {
 #else
    #include "pmapkdt.c"
 #endif
+
+/* Ambient include/exclude set (from ambient.c) */
+#ifndef  MAXASET
+   #define MAXASET  4095
+#endif
+extern OBJECT ambset [MAXASET+1];
+
+/* Callback to print photon attributes acc. to user defined format */
+int (*printPhoton)(RAY *r, Photon *p, PhotonMap *pm);
 
 
 
@@ -196,7 +205,7 @@ static int checkPhotonHeap (FILE *file)
 
 int newPhoton (PhotonMap* pmap, const RAY* ray)
 {
-   unsigned i, inROI = 0;
+   unsigned i;
    Photon photon;
    COLOR photonFlux;
    
@@ -208,10 +217,15 @@ int newPhoton (PhotonMap* pmap, const RAY* ray)
    if (ray -> robj > -1 && islight(objptr(ray -> ro -> omod) -> otype)) 
       return -1;
 
-   /* Store photon if within a region of interest (for ze Ecksperts!) */
-   if (!pmapNumROI || !pmapROI) 
-      inROI = 1;
-   else {
+   /* Ignore photon if modifier in/outside exclude/include set */
+   if (ambincl != -1 && ray -> ro && 
+       ambincl != inset(ambset, ray -> ro -> omod))
+      return -1;
+
+   if (pmapNumROI && pmapROI) {      
+      unsigned inROI = 0;
+      
+      /* Store photon if within a region of interest (for ze Ecksperts!) */
       for (i = 0; !inROI && i < pmapNumROI; i++)
          inROI = (ray -> rop [0] >= pmapROI [i].min [0] && 
                   ray -> rop [0] <= pmapROI [i].max [0] &&
@@ -219,63 +233,76 @@ int newPhoton (PhotonMap* pmap, const RAY* ray)
                   ray -> rop [1] <= pmapROI [i].max [1] &&
                   ray -> rop [2] >= pmapROI [i].min [2] && 
                   ray -> rop [2] <= pmapROI [i].max [2]);
+      if (!inROI)
+         return -1;
    }
-    
-   if (inROI) {       
-      /* Adjust flux according to distribution ratio and ray weight */
-      copycolor(photonFlux, ray -> rcol);   
-      scalecolor(photonFlux, 
-                 ray -> rweight / (pmap -> distribRatio ? pmap -> distribRatio
-                                                        : 1));
-      setPhotonFlux(&photon, photonFlux);
-               
-      /* Set photon position and flags */
-      VCOPY(photon.pos, ray -> rop);
-      photon.flags = 0;
-      photon.caustic = PMAP_CAUSTICRAY(ray);
-
-      /* Set contrib photon's primary ray and subprocess index (the latter
-       * to linearise the primary ray indices after photon distribution is
-       * complete). Also set primary ray's source index, thereby marking it
-       * as used. */
-      if (isContribPmap(pmap)) {
-         photon.primary = pmap -> numPrimary;
-         photon.proc = PMAP_GETRAYPROC(ray);
-         pmap -> lastPrimary.srcIdx = ray -> rsrc;
-      }
-      else photon.primary = 0;
-      
-      /* Set normal */
-      for (i = 0; i <= 2; i++)
-         photon.norm [i] = 127.0 * (isVolumePmap(pmap) ? ray -> rdir [i] 
-                                                       : ray -> ron [i]);
-
-      if (!pmap -> heapBuf) {
-         /* Lazily allocate heap buffa */
-#if NIX
-         /* Randomise buffa size to temporally decorellate flushes in
-          * multiprocessing mode */
-         srandom(randSeed + getpid());
-         pmap -> heapBufSize = PMAP_HEAPBUFSIZE * (0.5 + frandom());
+   
+   /* Adjust flux according to distribution ratio and ray weight */
+   copycolor(photonFlux, ray -> rcol);         
+#if 0
+   /* Factored out ray -> rweight as deprecated (?) for pmap, and infact
+      erroneously attenuates volume photon flux based on extinction,
+      which is already factored in by photonParticipate() */
+   scalecolor(photonFlux, 
+              ray -> rweight / (pmap -> distribRatio ? pmap -> distribRatio
+                                                     : 1));
 #else
-         /* Randomisation disabled for single processes on WIN; also useful
-          * for reproducability during debugging */         
-         pmap -> heapBufSize = PMAP_HEAPBUFSIZE;
-#endif         
-         if (!(pmap -> heapBuf = calloc(pmap -> heapBufSize, sizeof(Photon))))
-            error(SYSTEM, "failed heap buffer allocation in newPhoton");
-         pmap -> heapBufLen = 0;      
-      }
+   scalecolor(photonFlux, 
+              1.0 / (pmap -> distribRatio ? pmap -> distribRatio : 1));
+#endif
+   setPhotonFlux(&photon, photonFlux);
 
-      /* Photon initialised; now append to heap buffa */
-      memcpy(pmap -> heapBuf + pmap -> heapBufLen, &photon, sizeof(Photon));
-                  
-      if (++pmap -> heapBufLen >= pmap -> heapBufSize)
-         /* Heap buffa full, flush to heap file */
-         flushPhotonHeap(pmap);
+   /* Set photon position and flags */
+   VCOPY(photon.pos, ray -> rop);
+   photon.flags = 0;
+   photon.caustic = PMAP_CAUSTICRAY(ray);
 
-      pmap -> numPhotons++;
+   /* Set contrib photon's primary ray and subprocess index (the latter
+    * to linearise the primary ray indices after photon distribution is
+    * complete). Also set primary ray's source index, thereby marking it
+    * as used. */
+   if (isContribPmap(pmap)) {
+      photon.primary = pmap -> numPrimary;
+      photon.proc = PMAP_GETRAYPROC(ray);
+      pmap -> lastPrimary.srcIdx = ray -> rsrc;
    }
+   else photon.primary = 0;
+   
+   /* Set normal */
+   for (i = 0; i <= 2; i++)
+      photon.norm [i] = 127.0 * (isVolumePmap(pmap) ? ray -> rdir [i] 
+                                                    : ray -> ron [i]);
+
+   if (!pmap -> heapBuf) {
+      /* Lazily allocate heap buffa */
+#if NIX
+      /* Randomise buffa size to temporally decorellate flushes in
+       * multiprocessing mode */
+      srandom(randSeed + getpid());
+      pmap -> heapBufSize = PMAP_HEAPBUFSIZE * (0.5 + frandom());
+#else
+      /* Randomisation disabled for single processes on WIN; also useful
+       * for reproducability during debugging */         
+      pmap -> heapBufSize = PMAP_HEAPBUFSIZE;
+#endif         
+      if (!(pmap -> heapBuf = calloc(pmap -> heapBufSize, sizeof(Photon))))
+         error(SYSTEM, "failed heap buffer allocation in newPhoton");
+      pmap -> heapBufLen = 0;      
+   }
+
+   /* Photon initialised; now append to heap buffa */
+   memcpy(pmap -> heapBuf + pmap -> heapBufLen, &photon, sizeof(Photon));
+               
+   if (++pmap -> heapBufLen >= pmap -> heapBufSize)
+      /* Heap buffa full, flush to heap file */
+      flushPhotonHeap(pmap);
+
+   pmap -> numPhotons++;
+         
+   /* Print photon attributes */
+   if (printPhoton)
+      /* Non-const kludge */
+      printPhoton((RAY*)ray, &photon, pmap);
             
    return 0;
 }
@@ -372,7 +399,7 @@ void buildPhotonMap (PhotonMap *pmap, double *photonFlux,
          /* Scale photon's flux (hitherto normalised to 1 over RGB); in
           * case of a contrib photon map, this is done per light source,
           * and photonFlux is assumed to be an array */
-         getPhotonFlux(p, flux);            
+         getPhotonFlux(p, flux);
 
          if (photonFlux) {
             scalecolor(flux, photonFlux [isContribPmap(pmap) ? 

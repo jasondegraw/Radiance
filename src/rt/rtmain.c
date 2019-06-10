@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: rtmain.c,v 2.27 2016/03/21 19:06:08 greg Exp $";
+static const char	RCSid[] = "$Id: rtmain.c,v 2.29 2019/04/18 23:58:22 greg Exp $";
 #endif
 /*
  *  rtmain.c - main for rtrace per-ray calculation program
@@ -89,10 +89,6 @@ main(int  argc, char  *argv[])
 	for (i = 0; addobjnotify[i] != NULL; i++)
 		;
 	addobjnotify[i] = tranotify;
-					/* set our defaults */
-	rand_samp = 1;
-	maxdepth = -10;
-	minweight = 2e-3;
 					/* option city */
 	for (i = 1; i < argc; i++) {
 						/* expand arguments */
@@ -481,6 +477,10 @@ printdefaults(void)			/* print default values to stdout */
 		case 't': case 'T': printf(" trace"); break;
 		case 'o': printf(" origin"); break;
 		case 'd': printf(" direction"); break;
+		case 'r': printf(" reflect_contrib"); break;
+		case 'R': printf(" reflect_length"); break;
+		case 'x': printf(" unreflect_contrib"); break;
+		case 'X': printf(" unreflect_length"); break;
 		case 'v': printf(" value"); break;
 		case 'V': printf(" contribution"); break;
 		case 'l': printf(" length"); break;

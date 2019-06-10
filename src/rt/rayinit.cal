@@ -1,4 +1,4 @@
-{ RCSid $Id: rayinit.cal,v 2.16 2013/10/08 18:59:44 greg Exp $ }
+{ RCSid $Id: rayinit.cal,v 2.19 2019/06/10 13:56:52 greg Exp $ }
 {
 	Initialization file for Radiance.
 
@@ -36,6 +36,9 @@
 	if(a, b, c)			- if a positive, return b, else c
 
 	select(N, a1, a2, ..)		- return aN
+
+	min(a1, a2, ..)			- return minimum argument
+	max(a1, a2, ..)			- return maximum argument
 
 	sqrt(x)				- square root function
 
@@ -93,8 +96,6 @@ xor(a,b) : if( a, not(b), b );
 abs(x) : if( x, x, -x );
 sgn(x) : if( x, 1, if(-x, -1, 0) );
 sq(x) : x*x;
-max(a,b) : if( a-b, a, b );
-min(a,b) : if( a-b, b, a );
 inside(a,x,b) : and(x-a,b-x);
 frac(x) : x - floor(x);
 mod(n,d) : n - floor(n/d)*d;
@@ -150,21 +151,42 @@ turbulencez(x,y,z,s) : if( s-1.01, 0,
 
 			{ Normal distribution from uniform range (0,1) }
 
-un2`P(t) : t - (2.515517+t*(.802853+t*.010328))/
+un2`P.(t) : t - (2.515517+t*(.802853+t*.010328))/
 		(1+t*(1.432788+t*(.189269+t*.001308))) ;
-un1`P(p) : un2`P(sqrt(-2*log(p))) ;
+un1`P.(p) : un2`P.(sqrt(-2*log(p))) ;
 
-unif2norm(p) : if( .5-p, -un1`P(p), un1`P(1-p) ) ;
+unif2norm(p) : if( .5-p, -un1`P.(p), un1`P.(1-p) ) ;
 
 nrand(x) = unif2norm(rand(x));
 
 			{ Local (u,v) coordinates for planar surfaces }
-crosslen`P = Nx*Nx + Ny*Ny;
+crosslen`P. = Nx*Nx + Ny*Ny;
 			{ U is distance from projected Z-axis }
-U = if( crosslen`P - FTINY,
-		(Py*Nx - Px*Ny)/crosslen`P,
+U = if( crosslen`P. - FTINY,
+		(Py*Nx - Px*Ny)/crosslen`P.,
 		Px);
 			{ V is defined so that N = U x V }
-V = if( crosslen`P - FTINY,
-		Pz - Nz*(Px*Nx + Py*Ny)/crosslen`P,
+V = if( crosslen`P. - FTINY,
+		Pz - Nz*(Px*Nx + Py*Ny)/crosslen`P.,
 		Py);
+
+			{ Local hemisphere direction for *func & *data types }
+			{ last 3 real args = unnormalized up-vector }
+Vux`P. = arg(AC-1)*NzP - arg(AC)*NyP;
+Vuy`P. = arg(AC)*NxP - arg(AC-2)*NzP;
+Vuz`P. = arg(AC-2)*NyP - arg(AC-1)*NxP;
+vnorm`P. = 1/sqrt(Vux`P.*Vux`P. + Vuy`P.*Vuy`P. + Vuz`P.*Vuz`P.);
+Vnx`P. = Vux`P.*vnorm`P.;
+Vny`P. = Vuy`P.*vnorm`P.;
+Vnz`P. = Vuz`P.*vnorm`P.;
+Unx`P. = NyP*Vnz`P. - NzP*Vny`P.;
+Uny`P. = NzP*Vnx`P. - NxP*Vnz`P.;
+Unz`P. = NxP*Vny`P. - NyP*Vnx`P.;
+			{ Transform vectors, normalized (dx,dy,dz) away from surf }
+Ldx(dx,dy,dz) = dx*Unx`P. + dy*Uny`P. + dz*Unz`P.;
+Ldy(dx,dy,dz) = dx*Vnx`P. + dy*Vny`P. + dz*Vnz`P.;
+Ldz(dx,dy,dz) = dx*NxP + dy*NyP + dz*NzP;
+			{ Incident vector transformed to our coords }
+Idx = Ldx(-Dx,-Dy,-Dz);
+Idy = Ldy(-Dx,-Dy,-Dz);
+Idz = RdotP;

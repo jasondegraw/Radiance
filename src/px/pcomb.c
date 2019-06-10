@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: pcomb.c,v 2.48 2018/01/13 00:35:55 greg Exp $";
+static const char	RCSid[] = "$Id: pcomb.c,v 2.52 2019/04/03 20:16:31 greg Exp $";
 #endif
 /*
  *  Combine picture files according to calcomp functions.
@@ -30,6 +30,8 @@ struct {
 }	input[MAXINP];			/* input pictures */
 
 int	nfiles;				/* number of input files */
+
+VIEW	*commvp = NULL;			/* common view parameters */
 
 char	ourfmt[LPICFMT+1] = PICFMT;	/* input picture format */
 
@@ -191,6 +193,7 @@ main(
 	init();				/* set constants */
 					/* go back and get expressions */
 	for (a = 1; a < argc; a++) {
+		char	*fpath;
 		if (argv[a][0] == '-')
 			switch (argv[a][1]) {
 			case 'x':
@@ -204,7 +207,15 @@ main(
 			case 'h':
 				continue;
 			case 'f':
-				fcompile(argv[++a]);
+				fpath = getpath(argv[++a], getrlibpath(), 0);
+				if (fpath == NULL) {
+					eputs(argv[0]);
+					eputs(": cannot find file '");
+					eputs(argv[a]);
+					eputs("'\n");
+					quit(1);
+				}
+				fcompile(fpath);
 				continue;
 			case 'e':
 				scompile(argv[++a], NULL, 0);
@@ -222,6 +233,11 @@ main(
 	}
 						/* complete header */
 	printargs(argc, argv, stdout);
+	if (commvp != NULL) {
+		fputs(VIEWSTR, stdout);
+		fprintview(commvp, stdout);
+		fputc('\n', stdout);
+	}
 	if (strcmp(ourfmt, PICFMT))
 		fputformat(ourfmt, stdout);	/* print format if known */
 	putchar('\n');
@@ -245,7 +261,7 @@ headline(			/* check header line & echo if requested */
 	void	*p
 )
 {
-	char	fmt[32];
+	char	fmt[MAXFMTLEN];
 	double	d;
 	COLOR	ctmp;
 
@@ -300,6 +316,8 @@ checkfile(void)			/* ready a file */
 	}
 	if (!gotview || setview(&input[nfiles].vw) != NULL)
 		input[nfiles].vw.type = 0;
+	else if (commvp == NULL)
+		commvp = &input[nfiles].vw;
 	if (!fgetsresolu(&input[nfiles].rs, input[nfiles].fp)) {
 		eputs(input[nfiles].name);
 		eputs(": bad picture size\n");

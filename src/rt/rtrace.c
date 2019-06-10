@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: rtrace.c,v 2.70 2016/08/18 00:52:48 greg Exp $";
+static const char	RCSid[] = "$Id: rtrace.c,v 2.79 2019/05/06 16:49:38 greg Exp $";
 #endif
 /*
  *  rtrace.c - program and variables for individual ray tracing.
@@ -28,6 +28,7 @@ static const char	RCSid[] = "$Id: rtrace.c,v 2.70 2016/08/18 00:52:48 greg Exp $
 #include  "ambient.h"
 #include  "source.h"
 #include  "otypes.h"
+#include  "otspecial.h"
 #include  "resolu.h"
 #include  "random.h"
 
@@ -58,7 +59,8 @@ static putf_t puta, putd, putf;
 
 typedef void oputf_t(RAY *r);
 static oputf_t  oputo, oputd, oputv, oputV, oputl, oputL, oputc, oputp,
-		oputn, oputN, oputs, oputw, oputW, oputm, oputM, oputtilde;
+		oputr, oputR, oputx, oputX, oputn, oputN, oputs,
+		oputw, oputW, oputm, oputM, oputtilde;
 
 static void setoutput(char *vs);
 extern void tranotify(OBJECT obj);
@@ -71,7 +73,7 @@ static int getvec(FVECT vec, int fmt, FILE *fp);
 static void tabin(RAY *r);
 static void ourtrace(RAY *r);
 
-static oputf_t *ray_out[16], *every_out[16];
+static oputf_t *ray_out[32], *every_out[32];
 static putf_t *putreal;
 
 
@@ -116,6 +118,7 @@ rtrace(				/* trace rays from file */
 	unsigned long  vcount = (hresolu > 1) ? (unsigned long)hresolu*vresolu
 					      : (unsigned long)vresolu;
 	long  nextflush = (vresolu > 0) & (hresolu > 1) ? 0 : hresolu;
+	int  something2flush = 0;
 	FILE  *fp;
 	double	d;
 	FVECT  orig, direc;
@@ -134,6 +137,10 @@ rtrace(				/* trace rays from file */
 		castonly = 0;
 	else if (castonly)
 		nproc = 1;		/* don't bother multiprocessing */
+	if ((nextflush > 0) & (nproc > nextflush)) {
+		error(WARNING, "reducing number of processes to match flush interval");
+		nproc = nextflush;
+	}
 	switch (outform) {
 	case 'a': putreal = puta; break;
 	case 'f': putreal = putf; break;
@@ -152,7 +159,8 @@ rtrace(				/* trace rays from file */
 	if (hresolu > 0) {
 		if (vresolu > 0)
 			fprtresolu(hresolu, vresolu, stdout);
-		fflush(stdout);
+		else
+			fflush(stdout);
 	}
 					/* process file */
 	while (getvec(orig, inform, fp) == 0 &&
@@ -160,11 +168,12 @@ rtrace(				/* trace rays from file */
 
 		d = normalize(direc);
 		if (d == 0.0) {				/* zero ==> flush */
-			if (--nextflush <= 0 || !vcount) {
-				if (nproc > 1 && ray_fifo_flush() < 0)
-					error(USER, "lost children");
+			if ((--nextflush <= 0) | !vcount && something2flush) {
+				if (ray_pnprocs > 1 && ray_fifo_flush() < 0)
+					error(USER, "child(ren) died");
 				bogusray();
 				fflush(stdout);
+				something2flush = 0;
 				nextflush = (vresolu > 0) & (hresolu > 1) ? 0 :
 								hresolu;
 			} else
@@ -173,18 +182,19 @@ rtrace(				/* trace rays from file */
 			rtcompute(orig, direc, lim_dist ? d : 0.0);
 							/* flush if time */
 			if (!--nextflush) {
-				if (nproc > 1 && ray_fifo_flush() < 0)
-					error(USER, "lost children");
+				if (ray_pnprocs > 1 && ray_fifo_flush() < 0)
+					error(USER, "child(ren) died");
 				fflush(stdout);
 				nextflush = hresolu;
-			}
+			} else
+				something2flush = 1;
 		}
 		if (ferror(stdout))
 			error(SYSTEM, "write error");
 		if (vcount && !--vcount)		/* check for end */
 			break;
 	}
-	if (nproc > 1) {				/* clean up children */
+	if (ray_pnprocs > 1) {				/* clean up children */
 		if (ray_fifo_flush() < 0)
 			error(USER, "unable to complete processing");
 		ray_pclose(0);
@@ -235,12 +245,29 @@ setoutput(				/* set up output tables */
 		case 'd':				/* direction */
 			*table++ = oputd;
 			break;
+		case 'r':				/* reflected contrib. */
+			*table++ = oputr;
+			castonly = 0;
+			break;
+		case 'R':				/* reflected distance */
+			*table++ = oputR;
+			castonly = 0;
+			break;
+		case 'x':				/* xmit contrib. */
+			*table++ = oputx;
+			castonly = 0;
+			break;
+		case 'X':				/* xmit distance */
+			*table++ = oputX;
+			castonly = 0;
+			break;
 		case 'v':				/* value */
 			*table++ = oputv;
 			castonly = 0;
 			break;
 		case 'V':				/* contribution */
 			*table++ = oputV;
+			castonly = 0;
 			if (ambounce > 0 && (ambacc > FTINY || ambssamp > 0))
 				error(WARNING,
 					"-otV accuracy depends on -aa 0 -as 0");
@@ -273,6 +300,7 @@ setoutput(				/* set up output tables */
 			break;
 		case 'W':				/* coefficient */
 			*table++ = oputW;
+			castonly = 0;
 			if (ambounce > 0 && (ambacc > FTINY || ambssamp > 0))
 				error(WARNING,
 					"-otW accuracy depends on -aa 0 -as 0");
@@ -294,9 +322,6 @@ setoutput(				/* set up output tables */
 static void
 bogusray(void)			/* print out empty record */
 {
-	thisray.rorg[0] = thisray.rorg[1] = thisray.rorg[2] =
-	thisray.rdir[0] = thisray.rdir[1] = thisray.rdir[2] = 0.0;
-	thisray.rmax = 0.0;
 	rayorigin(&thisray, PRIMARY, NULL, NULL);
 	printvals(&thisray);
 }
@@ -323,8 +348,8 @@ rayirrad(			/* compute irradiance rather than radiance */
 )
 {
 	void	(*old_revf)(RAY *) = r->revf;
-
-	r->rot = 1e-5;			/* pretend we hit surface */
+					/* pretend we hit surface */
+	r->rxt = r->rot = 1e-5;
 	VSUM(r->rop, r->rorg, r->rdir, r->rot);
 	r->ron[0] = -r->rdir[0];
 	r->ron[1] = -r->rdir[1];
@@ -508,6 +533,53 @@ oputd(				/* print direction */
 
 
 static void
+oputr(				/* print mirrored contribution */
+	RAY  *r
+)
+{
+	RREAL	cval[3];
+
+	cval[0] = colval(r->mcol,RED);
+	cval[1] = colval(r->mcol,GRN);
+	cval[2] = colval(r->mcol,BLU);
+	(*putreal)(cval, 3);
+}
+
+
+
+static void
+oputR(				/* print mirrored distance */
+	RAY  *r
+)
+{
+	(*putreal)(&r->rmt, 1);
+}
+
+
+static void
+oputx(				/* print unmirrored contribution */
+	RAY  *r
+)
+{
+	RREAL	cval[3];
+
+	cval[0] = colval(r->rcol,RED) - colval(r->mcol,RED);
+	cval[1] = colval(r->rcol,GRN) - colval(r->mcol,GRN);
+	cval[2] = colval(r->rcol,BLU) - colval(r->mcol,BLU);
+	(*putreal)(cval, 3);
+}
+
+
+static void
+oputX(				/* print unmirrored distance */
+	RAY  *r
+)
+{
+	(*putreal)(&r->rxt, 1);
+}
+
+
+static void
 oputv(				/* print value */
 	RAY  *r
 )
@@ -547,7 +619,9 @@ oputl(				/* print effective distance */
 	RAY  *r
 )
 {
-	(*putreal)(&r->rt, 1);
+	RREAL	d = raydistance(r);
+
+	(*putreal)(&d, 1);
 }
 
 

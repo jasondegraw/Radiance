@@ -1,7 +1,7 @@
 #ifndef lint
-static const char RCSid[] = "$Id: evalglare.c,v 2.7 2017/08/12 15:11:09 greg Exp $";
+static const char RCSid[] = "$Id: evalglare.c,v 2.10 2018/11/27 18:08:24 greg Exp $";
 #endif
-/* EVALGLARE V2.00
+/* EVALGLARE V2.08
  * Evalglare Software License, Version 2.0
  *
  * Copyright (c) 1995 - 2016 Fraunhofer ISE, EPFL.
@@ -318,17 +318,38 @@ changed masking threshold to 0.05 cd/m2
    */
 /* evalglare.c, v2.02 2017/02/28  change of warning message, when invalid exposure setting is found. Reason: tab removal is not in all cases the right measure - it depends which tool caused the invalid exposure entry   */
 
-/* evalglare.c, v2.03 2017/08/12  ad of -O option - disk replacement by providing luminance, not documented
-remove some minor memory leakages, clean up initialization by C. Reetz
+/* evalglare.c, v2.03 2017/08/04  ad of -O option - disk replacement by providing luminance, not documented
+  */
+
+/* evalglare.c, v2.04 2017/08/04  adding -q option: use of Ev/pi as background luminance. not documented. no combination with -n option!!!
+  */
+
+/* evalglare.c, v2.05 2018/08/28  change of the -q option for the choice of the background luminance calculation mode: 0: CIE method (Ev-Edir)/pi, 1: mathematical correct average background luminance, 2: Ev/pi. 
+change of default options: 
+- cosinus weighted calculation of the background luminance (according to CIE) is now default.
+- absolute threshold for the glare source detection is now default (2000cd/m2), based on study of C. Pierson 
+  */
+
+/* evalglare.c, v2.06 2018/08/29  
+change of default value of multiplier b to 5.0, if task options (-t or -T ) are activated AND -b NOT used. To be downward compatible when using the task method.
+  */
+
+/* evalglare.c, v2.07 2018/11/17  
+bugfix: correction of error in the equations of PGSV_con and PGSV_sat
+all three PGSV equations are calculated now 
+illuminance from the masking area (E_v_mask) is also printed
+bugfix: in VCPs error fuction equation, value of 6.347 replaced by 6.374
+  */
+
+/* evalglare.c, v2.08 2018/11/27 
+bugfix: checkroutine for same image size for the masking corrected 
   */
 
 
- 
-#ifndef EVALGLARE  
+   
 #define EVALGLARE
-#endif
 #define PROGNAME "evalglare"
-#define VERSION "2.03 release 12.08.2017 by EPFL, J.Wienold"
+#define VERSION "2.08 release 27.11.2018 by EPFL, J.Wienold"
 #define RELEASENAME PROGNAME " " VERSION
 
 
@@ -1180,7 +1201,7 @@ float get_vcp(float dgr )
 {
 	float vcp;
 
-	vcp = 50 * erf((6.347 - 1.3227 * log(dgr)) / 1.414213562373) + 50;
+	vcp = 50 * erf((6.374 - 1.3227 * log(dgr)) / 1.414213562373) + 50;
 	if (dgr > 750) {
 		vcp = 0;
 	}
@@ -1351,18 +1372,23 @@ float get_cgi(pict * p, double E_v, double E_v_dir, int igs, int posindex_2)
 	return cgi;
 }	
 
-/* subroutine for the calculation of the PGSV; is only applied, when masking is done, since it refers only to the window. Important: masking area must be the window! */
-float get_pgsv(double E_v, double E_mask,double omega_mask,double lum_mask_av)
+
+
+/* subroutine for the calculation of the PGSV_con; is only applied, when masking is done, since it refers only to the window. Important: masking area must be the window! */
+float get_pgsv_con(double E_v, double E_mask,double omega_mask,double lum_mask_av, double Lavg)
 {
-	float pgsv;
+	float pgsv_con;
 	double Lb;
 
-        Lb = (E_v-E_mask)/1.414213562373;
+/*        Lb = (E_v-E_mask)/3.14159265359;  */
+/*        Lb = (2*E_v-lum_mask_av*omega_mask)/(2*3.14159265359-omega_mask); */
+	  Lb = (2*3.14159265359*Lavg-lum_mask_av*omega_mask)/(2*3.14159265359-omega_mask); 
 
-	pgsv =3.2*log10(lum_mask_av)-0.64*log10(omega_mask)+(0.79*log10(omega_mask)-0.61)*log10(Lb)-8.2 ;
+
+	pgsv_con =3.2*log10(lum_mask_av)-0.64*log10(omega_mask)+(0.79*log10(omega_mask)-0.61)*log10(Lb)-8.2 ;
 
 
-	return pgsv;
+	return pgsv_con;
 }
 
 /* subroutine for the calculation of the PGSV_saturation; is only applied, when masking is done, since it refers only to the window. Important: masking area must be the window! */
@@ -1370,12 +1396,35 @@ float get_pgsv_sat(double E_v)
 {
 	float pgsv_sat;
 
-	pgsv_sat =3.3-(0.57+3.3)/pow((1+E_v/1.414213562373/1250),1.7);
+	pgsv_sat =3.3-(0.57+3.3)/(1+pow(E_v/3.14159265359/1250,1.7));
 
 
 	return pgsv_sat;
 }
 
+/* subroutine for the calculation of the PGSV; is only applied, when masking is done, since it refers only to the window. Important: masking area must be the window! */
+
+float get_pgsv(double E_v, double E_mask,double omega_mask,double lum_mask_av,double Ltask, double Lavg)
+{
+	float pgsv;
+	double Lb;
+
+/*        Lb = (E_v-E_mask)/3.14159265359;  */
+/*        Lb = (2*E_v-lum_mask_av*omega_mask)/(2*3.14159265359-omega_mask); */
+	  Lb = (2*3.14159265359*Lavg-lum_mask_av*omega_mask)/(2*3.14159265359-omega_mask); 
+	
+	if (Lb==0.0 ) {
+	       fprintf(stderr,	" warning: Background luminance is 0 or masking area = full image! pgsv cannot be calculated (set to -99)!!\n");
+		pgsv=-99;
+			}else{
+		if ( (lum_mask_av/Lb) > (E_v/(3.14159265359*Ltask))) {
+			pgsv=get_pgsv_con(E_v,E_mask,omega_mask,lum_mask_av, Lavg);
+		}else{
+			pgsv=get_pgsv_sat(E_v)	;
+			}}
+	return pgsv;
+
+}
 
 
 
@@ -1393,11 +1442,11 @@ int main(int argc, char **argv)
         pict *pm = pict_create();
 	int     skip_second_scan,calcfast,age_corr,cut_view,cut_view_type,calc_vill, output, detail_out2, x1,y1, fill, yfillmax, yfillmin,
 		ext_vill, set_lum_max, set_lum_max2, img_corr,x_disk,y_disk,task_color, i_splitstart,zones,act_gsn,splitgs,
-		i_split, posindex_2, task_lum, checkfile, rval, i, i_max, x, y,x2,y2,x_zone,y_zone, i_z1, i_z2,
+		i_split, posindex_2, task_lum, checkfile, rval, i, i_max, x, y,x2,y2,x_zone,y_zone, i_z1, i_z2, thres_activate,
 		igs, actual_igs, lastpixelwas_gs, icol, xt, yt, change,checkpixels, before_igs, sgs, splithigh,uniform_gs,x_max, y_max,y_mid,
 		detail_out, posindex_picture, non_cos_lb, rx, ry, rmx,rmy,apply_disability,band_calc,band_color,masking,i_mask,no_glaresources,force;
 	double  LUM_replace,lum_total_max,age_corr_factor,age,dgp_ext,dgp,low_light_corr,omega_cos_contr, setvalue, lum_ideal, E_v_contr, sigma,om,delta_E,
-		E_vl_ext, lum_max, new_lum_max, r_center, ugp, ugr_exp, dgi_mod,lum_a, pgsv,E_v_mask,pgsv_sat,angle_disk,dist,n_corner_px,zero_corner_px,
+		E_vl_ext, lum_max, new_lum_max, r_center, ugp, ugr_exp, dgi_mod,lum_a, E_v_mask,angle_disk,dist,n_corner_px,zero_corner_px,
 		search_pix, a1, a2, a3, a4, a5, c3, c1, c2, r_split, max_angle,r_actual,lum_actual,dir_ill,
 		omegat, sang, E_v, E_v2, E_v_dir, avlum, act_lum, ang, angle_z1, angle_z2,per_95_band,per_75_band,pos,
 		l_max, lum_backg, lum_backg_cos, omega_sources, lum_sources,per_75_mask,per_95_mask,per_75_z1,per_95_z1,per_75_z2,per_95_z2,
@@ -1407,48 +1456,43 @@ int main(int argc, char **argv)
 		lum_z1[1],lum_z1_av,lum_z1_std[1],lum_z1_median[1],omega_z1,bbox_z1[2],
 		lum_z2[1],lum_z2_av,lum_z2_std[1],lum_z2_median[1],omega_z2,bbox_z2[2],
 		lum_pos[1],lum_nopos_median[1],lum_pos_median[1],lum_pos2_median[1],lum_pos_mean,lum_pos2_mean;
-	float lum_task, lum_thres, dgi,  vcp, cgi, ugr, limit, dgr, 
+	float lum_task, lum_thres, dgi,  vcp, cgi, ugr, limit, dgr,pgsv ,pgsv_sat,pgsv_con,
 		abs_max, Lveil;
 	char maskfile[500],file_out[500], file_out2[500], version[500];
-	char *cline = NULL;
+	char *cline;
 	VIEW userview = STDVIEW;
 	int gotuserview = 0;
-	struct muc_rvar* s_mask = NULL;
-	struct muc_rvar* s_band = NULL;
-	struct muc_rvar* s_z1 = NULL;
-	struct muc_rvar* s_z2 = NULL;
-	struct muc_rvar* s_noposweight = NULL;
-	struct muc_rvar* s_posweight = NULL;
-	struct muc_rvar* s_posweight2 = NULL;
-
-	// initializing variables ....
-	Lveil = lum_backg_cos = 0;
-	dgi = ugr = ugp = ugr_exp = dgi_mod = cgi = dgr = vcp = 0.0;
-	lum_task = lum_thres = limit = 0;
+	struct muc_rvar* s_mask;
 	s_mask = muc_rvar_create();
-	muc_rvar_set_dim(s_mask, 1);
+        muc_rvar_set_dim(s_mask, 1);
 	muc_rvar_clear(s_mask);
+	struct muc_rvar* s_band;
 	s_band = muc_rvar_create();
-	muc_rvar_set_dim(s_band, 1);
+        muc_rvar_set_dim(s_band, 1);
 	muc_rvar_clear(s_band);
+	struct muc_rvar* s_z1;
 	s_z1 = muc_rvar_create();
-	muc_rvar_set_dim(s_z1, 1);
+        muc_rvar_set_dim(s_z1, 1);
 	muc_rvar_clear(s_z1);
 
+	struct muc_rvar* s_z2;
 	s_z2 = muc_rvar_create();
-	muc_rvar_set_dim(s_z2, 1);
+        muc_rvar_set_dim(s_z2, 1);
 	muc_rvar_clear(s_z2);
 
+	struct muc_rvar* s_noposweight;
 	s_noposweight = muc_rvar_create();
-	muc_rvar_set_dim(s_noposweight, 1);
+        muc_rvar_set_dim(s_noposweight, 1);
 	muc_rvar_clear(s_noposweight);
  
+	struct muc_rvar* s_posweight;
 	s_posweight = muc_rvar_create();
-	muc_rvar_set_dim(s_posweight, 1);
+        muc_rvar_set_dim(s_posweight, 1);
 	muc_rvar_clear(s_posweight);
 
+	struct muc_rvar* s_posweight2;
 	s_posweight2 = muc_rvar_create();
-	muc_rvar_set_dim(s_posweight2, 1);
+        muc_rvar_set_dim(s_posweight2, 1);
 	muc_rvar_clear(s_posweight2);
 
 	/*set required user view parameters to invalid values*/
@@ -1474,6 +1518,7 @@ int main(int argc, char **argv)
 	lum_band_av = 0.0;
 	omega_band = 0.0;
 	pgsv = 0.0 ;
+	pgsv_con = 0.0 ;
 	pgsv_sat = 0.0 ;
 	E_v_mask = 0.0;
 	lum_z1_av = 0.0;
@@ -1515,7 +1560,8 @@ int main(int argc, char **argv)
 	omega_cos_contr = 0.0;
 	lum_ideal = 0.0;
 	max_angle = 0.2;
-	lum_thres = 5.0;
+	lum_thres = 2000.0;
+	lum_task = 0.0;
 	task_lum = 0;
 	sgs = 0;
 	splithigh = 1;
@@ -1533,7 +1579,7 @@ int main(int argc, char **argv)
 	c1 = 5.87e-05;
 	c2 = 0.092;
 	c3 = 0.159;
-	non_cos_lb = 1;
+	non_cos_lb = 0;
 	posindex_2 = 0;
 	task_color = 0;
 	limit = 50000.0;
@@ -1556,6 +1602,7 @@ int main(int argc, char **argv)
 	i_mask=0;
         actual_igs=0;
 	LUM_replace=0;
+	thres_activate=0;
 /* command line for output picture*/
 
 	cline = (char *) malloc(CLINEMAX+1);
@@ -1606,6 +1653,7 @@ int main(int argc, char **argv)
 			break;
 		case 'b':
 			lum_thres = atof(argv[++i]);
+			thres_activate = 1;
 			break;
 		case 'c':
 			checkfile = 1;
@@ -1706,8 +1754,12 @@ int main(int argc, char **argv)
 			break;
 
 
-		case 'n':
+/* deactivated		case 'n':
 			non_cos_lb = 0;
+			break;
+*/
+		case 'q':
+			non_cos_lb = atoi(argv[++i]);
 			break;
 
 		case 't':
@@ -1810,6 +1862,11 @@ int main(int argc, char **argv)
 		}
 	}
 
+/* set multiplier for task method to 5, if not specified */
+
+if ( task_lum == 1 && thres_activate == 0){
+		lum_thres = 5.0;
+}
 /*fast calculation, if gendgp_profile is used: No Vertical illuminance calculation, only dgp is calculated*/
 
 if (output == 1 && ext_vill == 1 ) {
@@ -1880,7 +1937,7 @@ if (masking ==1 && zones >0) {
 
 	if (masking == 1) {
 
-		if (!pict_get_xsize(p)==pict_get_xsize(pm) || !pict_get_ysize(p)==pict_get_ysize(pm)) {
+		if (pict_get_xsize(p)!=pict_get_xsize(pm) || pict_get_ysize(p)!=pict_get_ysize(pm)) {
 		fprintf(stderr, "error: masking image has other resolution than main image ! \n");
 		fprintf(stderr, "size must be identical \n");
 	        printf("resolution main image : %dx%d\n",pict_get_xsize(p),pict_get_ysize(p)); 
@@ -2108,8 +2165,7 @@ if (cut_view==2) {
  	lum_pos_mean= lum_pos_mean/sang;
  	lum_pos2_mean= lum_pos2_mean/sang;
 
-	// XXX: sure this works? I'd suggest parenthesis.
-	if ((set_lum_max2 >= 1 && E_v_contr > 0 && (E_vl_ext - E_v) > 0) || set_lum_max2==3) {
+	if ((set_lum_max2 >= 1 && E_v_contr > 0 && (E_vl_ext - E_v) > 0 ) || set_lum_max2==3) {
 
 		if (set_lum_max2<3){
 		lum_ideal = (E_vl_ext - E_v + E_v_contr) / omega_cos_contr;
@@ -2540,6 +2596,11 @@ if (calcfast ==1 || search_pix <= 1.0 || calcfast == 2 ) {
 			lum_backg = lum_backg_cos;
 	}
 
+	if (non_cos_lb == 2) {
+			lum_backg = E_v / 3.1415927;
+	}
+
+
 /* file writing NOT here 
 	if (checkfile == 1) {
 		pict_write(p, file_out);
@@ -2591,12 +2652,21 @@ if (calcfast ==1 || search_pix <= 1.0 || calcfast == 2 ) {
 	        muc_rvar_get_median(s_mask,lum_mask_median);
                 muc_rvar_get_bounding_box(s_mask,bbox);
 /* PSGV only why masking of window is applied! */
-                 pgsv = get_pgsv(E_v, E_v_mask, omega_mask, lum_mask_av);
+
+	
+	if (task_lum == 0 || lum_task == 0.0 ) {
+	       		fprintf(stderr,	" warning: Task area not set or task luminance=0 ! pgsv cannot be calculated (set to -99)!!\n");
+			pgsv = -99; 
+		} else {
+                 	pgsv = get_pgsv(E_v, E_v_mask, omega_mask, lum_mask_av,lum_task,avlum);
+                	}
+
+                 pgsv_con = get_pgsv_con(E_v, E_v_mask, omega_mask, lum_mask_av,avlum);
                  pgsv_sat =get_pgsv_sat(E_v);
 
 	if (detail_out == 1) {
 
-	        printf ("masking:no_pixels,omega,av_lum,median_lum,std_lum,perc_75,perc_95,lum_min,lum_max,pgsv,pgsv_sat: %i %f %f %f %f %f %f %f %f %f %f\n",i_mask,omega_mask,lum_mask_av,lum_mask_median[0],sqrt(lum_mask_std[0]),per_75_mask,per_95_mask,bbox[0],bbox[1],pgsv,pgsv_sat );
+	        printf ("masking:no_pixels,omega,av_lum,median_lum,std_lum,perc_75,perc_95,lum_min,lum_max,pgsv_con,pgsv_sat,pgsv,Ev_mask: %i %f %f %f %f %f %f %f %f %f %f %f %f\n",i_mask,omega_mask,lum_mask_av,lum_mask_median[0],sqrt(lum_mask_std[0]),per_75_mask,per_95_mask,bbox[0],bbox[1],pgsv_con,pgsv_sat,pgsv,E_v_mask );
 
 	}	
 		
@@ -2921,33 +2991,15 @@ has to be re-written from scratch....
 	}
 
 
-	pict_free(p);
-	pict_free(pm);
-	muc_rvar_free(s_mask);
-	muc_rvar_free(s_band);
-	muc_rvar_free(s_z1);
-	muc_rvar_free(s_z2);
-	muc_rvar_free(s_noposweight);
-	muc_rvar_free(s_posweight);
-	muc_rvar_free(s_posweight2);
-	free(cline);
+
 	return EXIT_SUCCESS;
+	exit(0);
 
   userr:
 	fprintf(stderr,
 			"Usage: %s [-s][-d][-c picture][-t xpos ypos angle] [-T xpos ypos angle] [-b fact] [-r angle] [-y] [-Y lum] [-i Ev] [-I Ev ymax ymin] [-v] picfile\n",
 			progname);
-	pict_free(p);
-	pict_free(pm);
-	muc_rvar_free(s_mask);
-	muc_rvar_free(s_band);
-	muc_rvar_free(s_z1);
-	muc_rvar_free(s_z2);
-	muc_rvar_free(s_noposweight);
-	muc_rvar_free(s_posweight);
-	muc_rvar_free(s_posweight2);
-	free(cline);
-	return 1;
+	exit(1);
 }
 
 

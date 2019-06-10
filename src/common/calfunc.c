@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: calfunc.c,v 2.18 2015/08/01 23:27:04 greg Exp $";
+static const char	RCSid[] = "$Id: calfunc.c,v 2.22 2019/06/10 16:52:27 greg Exp $";
 #endif
 /*
  *  calfunc.c - routines for calcomp using functions.
@@ -22,7 +22,7 @@ static const char	RCSid[] = "$Id: calfunc.c,v 2.18 2015/08/01 23:27:04 greg Exp 
 
 				/* bits in argument flag (better be right!) */
 #define  AFLAGSIZ	(8*sizeof(unsigned long))
-#define  ALISTSIZ	6	/* maximum saved argument list */
+#define  ALISTSIZ	8	/* maximum saved argument list */
 
 typedef struct activation {
     char  *name;		/* function name */
@@ -40,7 +40,9 @@ static double  libfunc(char *fname, VARDEF *vp);
 #define  MAXLIB		64	/* maximum number of library functions */
 #endif
 
-static double  l_if(char *), l_select(char *), l_rand(char *);
+static double  l_if(char *), l_select(char *);
+static double  l_min(char *), l_max(char *);
+static double  l_rand(char *);
 static double  l_floor(char *), l_ceil(char *);
 static double  l_sqrt(char *);
 static double  l_sin(char *), l_cos(char *), l_tan(char *);
@@ -60,6 +62,8 @@ static LIBR  library[MAXLIB] = {
     { "if", 3, ':', l_if },
     { "log", 1, ':', l_log },
     { "log10", 1, ':', l_log10 },
+    { "max", 1, ':', l_max },
+    { "min", 1, ':', l_min },
     { "rand", 1, ':', l_rand },
     { "select", 1, ':', l_select },
     { "sin", 1, ':', l_sin },
@@ -67,13 +71,13 @@ static LIBR  library[MAXLIB] = {
     { "tan", 1, ':', l_tan },
 };
 
-static int  libsize = 16;
+static int  libsize = 18;
 
 #define  resolve(ep)	((ep)->type==VAR?(ep)->v.ln:argf((ep)->v.chan))
 
 
 int
-fundefined(			/* return # of arguments for function */
+fundefined(			/* return # of req'd arguments for function */
 	char  *fname
 )
 {
@@ -104,10 +108,13 @@ funvalue(			/* return a function value to the user */
     act.name = fname;
     act.prev = curact;
     act.ap = a;
-    if (n >= AFLAGSIZ)
-	act.an = ~0;
-    else
+    if (n < AFLAGSIZ)
 	act.an = (1L<<n)-1;
+    else {
+	act.an = ~0;
+	if (n > AFLAGSIZ)
+	    wputs("Excess arguments in funvalue()\n");
+    }
     act.fun = NULL;
     curact = &act;
 
@@ -138,8 +145,10 @@ funset(				/* set a library function */
 	;
     if (cp == fname)
 	return;
-    if (cp[-1] == CNTXMARK)
+    while (cp[-1] == CNTXMARK) {
 	*--cp = '\0';
+	if (cp == fname) return;
+    }
     if ((lp = liblookup(fname)) == NULL) {	/* insert */
 	if (libsize >= MAXLIB) {
 	    eputs("Too many library functons!\n");
@@ -192,23 +201,25 @@ argument(int n)			/* return nth argument for active function */
     EPNODE  *ep = NULL;
     double  aval;
 
-    if (actp == NULL || --n < 0) {
+    if (!n)					/* asking for # arguments? */
+	return((double)nargum());
+
+    if (!actp | (--n < 0)) {
 	eputs("Bad call to argument!\n");
 	quit(1);
     }
-						/* already computed? */
-    if (n < AFLAGSIZ && 1L<<n & actp->an)
+    if ((n < AFLAGSIZ) & actp->an >> n)		/* already computed? */
 	return(actp->ap[n]);
 
-    if (actp->fun == NULL || (ep = ekid(actp->fun, n+1)) == NULL) {
+    if (!actp->fun || !(ep = ekid(actp->fun, n+1))) {
 	eputs(actp->name);
 	eputs(": too few arguments\n");
 	quit(1);
     }
-    curact = actp->prev;			/* pop environment */
+    curact = actp->prev;			/* previous context */
     aval = evalue(ep);				/* compute argument */
-    curact = actp;				/* push back environment */
-    if (n < ALISTSIZ) {				/* save value */
+    curact = actp;				/* put back calling context */
+    if (n < ALISTSIZ) {				/* save value if room */
 	actp->ap[n] = aval;
 	actp->an |= 1L<<n;
     }
@@ -389,6 +400,38 @@ l_select(char *nm)	/* return argument #(A1+1) */
 		return(0.0);
 	}
 	return(argument(n+1));
+}
+
+
+static double
+l_max(char *nm)		/* general maximum function */
+{
+	int  n = nargum();
+	int  i = 1;
+	int  vmax = argument(1);
+
+	while (i++ < n) {
+		double  v = argument(i);
+		if (vmax < v)
+			vmax = v;
+	}
+	return(vmax);
+}
+
+
+static double
+l_min(char *nm)		/* general minimum function */
+{
+	int  n = nargum();
+	int  i = 1;
+	int  vmin = argument(1);
+
+	while (i++ < n) {
+		double  v = argument(i);
+		if (vmin > v)
+			vmin = v;
+	}
+	return(vmin);
 }
 
 

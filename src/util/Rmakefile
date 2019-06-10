@@ -1,4 +1,4 @@
-# RCSid: $Id: Rmakefile,v 2.83 2017/08/11 21:39:52 greg Exp $
+# RCSid: $Id: Rmakefile,v 2.88 2018/11/17 20:15:51 greg Exp $
 #
 # Radiance makefile for utility programs
 #
@@ -21,7 +21,7 @@ LIBDIR = /usr/local/lib/ray
 
 PROGS = findglare glarendx rpiece rad ranimate ranimove vwright getinfo \
 		vwrays xglaresrc rsensor dctimestep rttree_reduce rcollate \
-		eplus_adduvf rfluxmtx rmtxop wrapBSDF evalglare
+		eplus_adduvf rfluxmtx rmtxop wrapBSDF evalglare radcompare
 
 LIBFILES = rambpos.cal ambpos.cal tregsamp.dat reinhartb.cal \
 klems_full.cal klems_half.cal klems_quarter.cal disk2square.cal \
@@ -32,7 +32,7 @@ all:	$(PROGS)
 install:	all $(SPECIAL) objview.pl objpict.pl glare.csh dayfact.csh \
 rlux.csh raddepend.csh trad.wsh objline.csh compamb.csh vinfo.csh \
 ltview.pl ltpict.pl genambpos.pl fieldcomb.csh genklemsamp.pl \
-genskyvec.pl genBSDF.pl bsdfview.pl $(LIBFILES)
+genskyvec.pl genBSDF.pl bsdfview.pl rtpict.pl $(LIBFILES)
 	cp $(PROGS) $(INSTDIR)
 	cp objview.pl $(INSTDIR)/objview
 	cp objline.csh $(INSTDIR)/objline
@@ -52,10 +52,11 @@ genskyvec.pl genBSDF.pl bsdfview.pl $(LIBFILES)
 	cp bsdfview.pl $(INSTDIR)/bsdfview
 	cp ltview.pl $(INSTDIR)/ltview
 	cp ltpict.pl $(INSTDIR)/ltpict
+	cp rtpict.pl $(INSTDIR)/rtpict
 	cd $(INSTDIR) ; chmod 755 objview objpict \
 		glare dayfact debugcal rlux raddepend objline \
 		compamb vinfo genambpos fieldcomb genklemsamp \
-		genskyvec genBSDF
+		genskyvec genBSDF rtpict
 	cd $(LIBDIR) && rm -f $(LIBFILES)
 	cp $(LIBFILES) $(LIBDIR)
 	csh -f tradinstall.csh $(INSTDIR) $(LIBDIR)/tcl
@@ -138,6 +139,9 @@ wrapBSDF:	wrapBSDF.o
 evalglare:	evalglare.o pictool.o
 	$(CC) $(CFLAGS) -o evalglare evalglare.o pictool.o -lreetz -lrtrad $(MLIB)
 
+radcompare:	radcompare.o
+	$(CC) $(CFLAGS) -o radcompare radcompare.o -lrtrad $(MLIB)
+
 setscan.o:	setscan.h
 
 eplus_adduvf.o:	../common/triangulate.h ../common/rtprocess.h \
@@ -196,7 +200,7 @@ rad.o:	../common/paths.h
 
 ranimate.o netproc.o:	netproc.h
 
-ranimove1.o:	../common/otypes.h
+ranimove1.o:	../common/otypes.h ../rt/otspecial.h ../rt/source.h
 
 netproc.o:	../common/paths.h
 
@@ -225,7 +229,8 @@ rsensor.o:	../rt/ray.h ../common/octree.h \
 
 rsensor.o:	../common/view.h ../common/resolu.h ../rt/source.h
 
-rcollate.o:	../common/platform.h ../common/rtio.h ../common/resolu.h
+radcompare.o rcollate.o:	../common/platform.h \
+../common/rtio.h ../common/resolu.h
 
 Version.c:	../rt/Version.c
 	cp ../rt/Version.c .
@@ -247,4 +252,8 @@ pictool.o evalglare.o:	pictool.h ../common/g3vector.h ../common/g3affine.h \
 
 evalglare.o:	../common/rtio.h
 
+radcompare.o:	../common/rtio.h ../common/color.h ../common/lookup.h
+
 pictool.o:	../common/view.h ../common/color.h
+
+getinfo.o:	../common/rtprocess.h ../common/platform.h ../common/resolu.h

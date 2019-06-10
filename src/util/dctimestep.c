@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: dctimestep.c,v 2.37 2016/03/06 01:13:18 schorsch Exp $";
+static const char RCSid[] = "$Id: dctimestep.c,v 2.40 2019/03/01 01:00:03 greg Exp $";
 #endif
 /*
  * Compute time-step result using Daylight Coefficient method.
@@ -21,7 +21,7 @@ static int
 sum_images(const char *fspec, const CMATRIX *cv, FILE *fout)
 {
 	int	myDT = DTfromHeader;
-	COLOR	*scanline = NULL;
+	COLR	*scanline = NULL;
 	CMATRIX	*pmat = NULL;
 	int	myXR=0, myYR=0;
 	int	i, y;
@@ -30,8 +30,10 @@ sum_images(const char *fspec, const CMATRIX *cv, FILE *fout)
 		error(INTERNAL, "expected vector in sum_images()");
 	for (i = 0; i < cv->nrows; i++) {
 		const COLORV	*scv = cv_lval(cv,i);
+		int		flat_file = 0;
 		char		fname[1024];
 		FILE		*fp;
+		long		data_start;
 		int		dt, xr, yr;
 		COLORV		*psp;
 		char		*err;
@@ -56,7 +58,7 @@ sum_images(const char *fspec, const CMATRIX *cv, FILE *fout)
 		if (myDT == DTfromHeader) {		/* on first one */
 			myDT = dt;
 			myXR = xr; myYR = yr;
-			scanline = (COLOR *)malloc(sizeof(COLOR)*myXR);
+			scanline = (COLR *)malloc(sizeof(COLR)*myXR);
 			if (scanline == NULL)
 				error(SYSTEM, "out of memory in sum_images()");
 			pmat = cm_alloc(myYR, myXR);
@@ -70,18 +72,31 @@ sum_images(const char *fspec, const CMATRIX *cv, FILE *fout)
 					fname);
 			error(USER, errmsg);
 		}
+							/* flat file check */
+		if ((data_start = ftell(fp)) > 0 && fseek(fp, 0L, SEEK_END) == 0) {
+			flat_file = (ftell(fp) == data_start + sizeof(COLR)*xr*yr);
+			if (fseek(fp, data_start, SEEK_SET) < 0) {
+				sprintf(errmsg, "cannot seek on picture '%s'", fname);
+				error(SYSTEM, errmsg);
+			}
+		}
 		psp = pmat->cmem;
 		for (y = 0; y < yr; y++) {		/* read it in */
+			COLOR	col;
 			int	x;
-			if (freadscan(scanline, xr, fp) < 0) {
+			if (flat_file ? getbinary(scanline, sizeof(COLR), xr, fp) != xr :
+					freadcolrs(scanline, xr, fp) < 0) {
 				sprintf(errmsg, "error reading picture '%s'",
 						fname);
 				error(SYSTEM, errmsg);
 			}
 							/* sum in scanline */
 			for (x = 0; x < xr; x++, psp += 3) {
-				multcolor(scanline[x], scv);
-				addcolor(psp, scanline[x]);
+				if (!scanline[x][EXP])
+					continue;	/* skip zeroes */
+				colr_color(col, scanline[x]);
+				multcolor(col, scv);
+				addcolor(psp, col);
 			}
 		}
 		fclose(fp);				/* done this picture */
@@ -232,7 +247,7 @@ main(int argc, char *argv[])
 			for (i = 0; i < nsteps; i++) {
 				CMATRIX	*cvec = cm_column(cmtx, i);
 				if (ofspec != NULL) {
-					sprintf(fnbuf, ofspec, i+1);
+					sprintf(fnbuf, ofspec, i);
 					if ((ofp = fopen(fnbuf, "wb")) == NULL) {
 						fprintf(stderr,
 					"%s: cannot open '%s' for output\n",
@@ -243,7 +258,7 @@ main(int argc, char *argv[])
 					printargs(argc, argv, ofp);
 					fputnow(ofp);
 				}
-				fprintf(ofp, "FRAME=%d\n", i+1);
+				fprintf(ofp, "FRAME=%d\n", i);
 				if (!sum_images(argv[a], cvec, ofp))
 					return(1);
 				if (ofspec != NULL) {
@@ -267,7 +282,7 @@ main(int argc, char *argv[])
 			const char	*wtype = (outfmt==DTascii) ? "w" : "wb";
 			for (i = 0; i < nsteps; i++) {
 				CMATRIX	*rvec = cm_column(rmtx, i);
-				sprintf(fnbuf, ofspec, i+1);
+				sprintf(fnbuf, ofspec, i);
 				if ((ofp = fopen(fnbuf, wtype)) == NULL) {
 					fprintf(stderr,
 					"%s: cannot open '%s' for output\n",
@@ -281,7 +296,7 @@ main(int argc, char *argv[])
 					newheader("RADIANCE", ofp);
 					printargs(argc, argv, ofp);
 					fputnow(ofp);
-					fprintf(ofp, "FRAME=%d\n", i+1);
+					fprintf(ofp, "FRAME=%d\n", i);
 					fprintf(ofp, "NROWS=%d\n", rvec->nrows);
 					fputs("NCOLS=1\nNCOMP=3\n", ofp);
 					fputformat((char *)cm_fmt_id[outfmt], ofp);

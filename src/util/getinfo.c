@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: getinfo.c,v 2.14 2016/08/30 06:10:12 greg Exp $";
+static const char	RCSid[] = "$Id: getinfo.c,v 2.17 2019/06/09 18:22:44 greg Exp $";
 #endif
 /*
  *  getinfo.c - program to read info. header from file.
@@ -11,18 +11,16 @@ static const char	RCSid[] = "$Id: getinfo.c,v 2.14 2016/08/30 06:10:12 greg Exp 
 #include  <string.h>
 
 #include  "platform.h"
+#include  "rtprocess.h"
 #include  "resolu.h"
 
 #ifdef getc_unlocked		/* avoid nasty file-locking overhead */
+#undef getc
 #undef getchar
 #undef putchar
+#define getc		getc_unlocked
 #define getchar		getchar_unlocked
 #define putchar		putchar_unlocked
-#endif
-
-#if defined(_WIN32) || defined(_WIN64)
-#include <process.h>
-#define	execvp	_execvp
 #endif
 
 static gethfunc tabstr;
@@ -64,7 +62,8 @@ main(
 		SET_FILE_BINARY(stdin);
 		SET_FILE_BINARY(stdout);
 		setvbuf(stdin, NULL, _IONBF, 2);
-		getheader(stdin, (gethfunc *)fputs, stdout);
+		if (getheader(stdin, (gethfunc *)fputs, stdout) < 0)
+			return 1;
 		printargs(argc-2, argv+2, stdout);
 		fputc('\n', stdout);
 		fflush(stdout);
@@ -74,7 +73,8 @@ main(
 	} else if (argc > 2 && !strcmp(argv[1], "-a")) {
 		SET_FILE_BINARY(stdin);
 		SET_FILE_BINARY(stdout);
-		getheader(stdin, (gethfunc *)fputs, stdout);
+		if (getheader(stdin, (gethfunc *)fputs, stdout) < 0)
+			return 1;
 		for (i = 2; i < argc; i++) {
 			int	len = strlen(argv[i]);
 			if (!len) continue;
@@ -88,7 +88,8 @@ main(
 	} else if (argc == 2 && !strcmp(argv[1], "-")) {
 		SET_FILE_BINARY(stdin);
 		SET_FILE_BINARY(stdout);
-		getheader(stdin, NULL, NULL);
+		if (getheader(stdin, NULL, NULL) < 0)
+			return 1;
 		copycat();
 		return 0;
 	}
@@ -112,7 +113,8 @@ main(
 		if (dim) {
 			getdim(stdin);
 		} else {
-			getheader(stdin, (gethfunc *)fputs, stdout);
+			if (getheader(stdin, (gethfunc *)fputs, stdout) < 0)
+				return 1;
 			fputc('\n', stdout);
 		}
 	}
@@ -127,9 +129,11 @@ getdim(				/* get dimensions from file */
 {
 	int  j;
 	int  c;
-
-	getheader(fp, NULL, NULL);	/* skip header */
-
+				/* skip header */
+	if (getheader(fp, NULL, NULL) < 0) {
+		fputs("bad header\n", stdout);
+		return;	
+	}
 	switch (c = getc(fp)) {
 	case '+':		/* picture */
 	case '-':
@@ -165,6 +169,6 @@ copycat(void)			/* copy input to output */
 
 	fflush(stdout);
 	while ((n = fread(buf, 1, sizeof(buf), stdin)) > 0)
-		if (write(fileno(stdout), buf, n) != n)
+		if (writebuf(fileno(stdout), buf, n) != n)
 			break;
 }

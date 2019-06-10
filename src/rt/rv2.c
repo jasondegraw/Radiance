@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: rv2.c,v 2.65 2014/04/11 20:27:23 greg Exp $";
+static const char	RCSid[] = "$Id: rv2.c,v 2.69 2018/11/13 19:58:33 greg Exp $";
 #endif
 /*
  *  rv2.c - command routines used in tracing a view.
@@ -16,9 +16,9 @@ static const char	RCSid[] = "$Id: rv2.c,v 2.65 2014/04/11 20:27:23 greg Exp $";
 #include  "rtprocess.h"	/* win_popen() */
 #include  "paths.h"
 #include  "ray.h"
-#include  "source.h"
 #include  "ambient.h"
 #include  "otypes.h"
+#include  "otspecial.h"
 #include  "rpaint.h"
 
 extern int  psample;			/* pixel sample size */
@@ -376,8 +376,11 @@ getorigin(				/* origin viewpoint */
 	VIEW	nv = ourview;
 	double	d;
 					/* get new view origin */
-	if (!sscanvec(s, nv.vp)) {
-		int	x, y;
+	if (sscanf(s, "%lf %lf", &d, &d) == 1) {
+					/* just moving some distance */
+		VSUM(nv.vp, nv.vp, nv.vdir, d);
+	} else if (!sscanvec(s, nv.vp)) {
+		int	x, y;		/* need to pick origin */
 		RAY	thisray;
 		if (dev->getcur == NULL)
 			return;
@@ -396,7 +399,7 @@ getorigin(				/* origin viewpoint */
 		}
 		if (thisray.rod < 0.0)	/* don't look through other side */
 			flipsurface(&thisray);
-		VSUM(nv.vp, thisray.rop, thisray.ron, 2.0*FTINY);
+		VSUM(nv.vp, thisray.rop, thisray.ron, 20.0*FTINY);
 		VCOPY(nv.vdir, thisray.ron);
 	} else if (!sscanvec(sskip2(s,3), nv.vdir) || normalize(nv.vdir) == 0.0)
 		VCOPY(nv.vdir, ourview.vdir);
@@ -814,7 +817,7 @@ traceray(				/* trace a single ray */
 		else {
 			sprintf(buf, "at (%.6g %.6g %.6g) (%.6g)",
 					thisray.rop[0], thisray.rop[1],
-					thisray.rop[2], thisray.rt);
+					thisray.rop[2], raydistance(&thisray));
 			(*dev->comout)(buf);
 		}
 		(*dev->comin)(buf, NULL);

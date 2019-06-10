@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: rcollate.c,v 2.25 2016/08/18 00:52:48 greg Exp $";
+static const char RCSid[] = "$Id: rcollate.c,v 2.30 2019/02/05 17:13:00 greg Exp $";
 #endif
 /*
  * Utility to re-order records in a binary or ASCII data file (matrix)
@@ -21,9 +21,9 @@ static const char RCSid[] = "$Id: rcollate.c,v 2.25 2016/08/18 00:52:48 greg Exp
 #endif
 
 typedef struct {
+	void	*mapped;	/* memory-mapped pointer */
 	void	*base;		/* pointer to base memory */
 	size_t	len;		/* allocated memory length */
-	int	mapped;		/* memory-mapped file? */
 } MEMLOAD;		/* file loaded/mapped into memory */
 
 typedef struct {
@@ -42,10 +42,11 @@ free_load(MEMLOAD *mp)
 		return;
 #ifdef MAP_FILE
 	if (mp->mapped)
-		munmap(mp->base, mp->len);
+		munmap(mp->mapped, mp->len);
 	else
 #endif
 		free(mp->base);
+	mp->mapped = NULL;
 	mp->base = NULL;
 	mp->len = 0;
 }
@@ -60,9 +61,9 @@ load_stream(MEMLOAD *mp, FILE *fp)
 
 	if (mp == NULL)
 		return(-1);
+	mp->mapped = NULL;
 	mp->base = NULL;
 	mp->len = 0;
-	mp->mapped = 0;
 	if (fp == NULL)
 		return(-1);
 	while ((nr = fread(buf, 1, sizeof(buf), fp)) > 0) {
@@ -90,7 +91,7 @@ static int
 load_file(MEMLOAD *mp, FILE *fp)
 {
 	int	fd;
-	off_t	skip, flen;
+	off_t	skip, flen, fpos;
 
 #if defined(_WIN32) || defined(_WIN64)
 				/* too difficult to fix this */
@@ -98,9 +99,9 @@ load_file(MEMLOAD *mp, FILE *fp)
 #endif
 	if (mp == NULL)
 		return(-1);
+	mp->mapped = NULL;
 	mp->base = NULL;
 	mp->len = 0;
-	mp->mapped = 0;
 	if (fp == NULL)
 		return(-1);
 	fd = fileno(fp);
@@ -111,12 +112,12 @@ load_file(MEMLOAD *mp, FILE *fp)
 	mp->len = (size_t)(flen - skip);
 #ifdef MAP_FILE
 	if (mp->len > 1L<<20) {		/* map file if > 1 MByte */
-		mp->base = mmap(NULL, mp->len, PROT_READ, MAP_PRIVATE, fd, skip);
-		if (mp->base != MAP_FAILED) {
-			mp->mapped = 1;
+		mp->mapped = mmap(NULL, flen, PROT_READ, MAP_PRIVATE, fd, 0);
+		if (mp->mapped != MAP_FAILED) {
+			mp->base = (char *)mp->mapped + skip;
 			return(1);	/* mmap() success */
 		}
-		mp->base = NULL;	/* fall back to reading it in... */
+		mp->mapped = NULL;	/* else fall back to reading it in... */
 	}
 #endif
 	if (lseek(fd, skip, SEEK_SET) != skip ||
@@ -124,9 +125,15 @@ load_file(MEMLOAD *mp, FILE *fp)
 		mp->len = 0;
 		return(-1);
 	}
-	if (read(fd, (char *)mp->base, mp->len) != mp->len) {
-		free_load(mp);
-		return(-1);
+	fpos = skip;
+	while (fpos < flen) {		/* read() fails if n > 2 GBytes */
+		ssize_t	nread = read(fd, (char *)mp->base+(fpos-skip),
+				(flen-fpos < 1L<<24) ? flen-fpos : 1L<<24);
+		if (nread <= 0) {
+			free_load(mp);
+			return(-1);
+		}
+		fpos += nread;
 	}
 	return(1);
 }
@@ -363,7 +370,7 @@ do_transpose(const MEMLOAD *mp)
 			putc(tabEOL[j >= no_columns-1], stdout);
 		} else {			/* binary output */
 			putbinary((char *)mp->base +
-					(n_comp*comp_size)*(j*ni_columns + i),
+				(size_t)(n_comp*comp_size)*(j*ni_columns + i),
 					comp_size, n_comp, stdout);
 		}
 	    if (ferror(stdout)) {
@@ -441,7 +448,7 @@ done:
 static int
 headline(char *s, void *p)
 {
-	static char	fmt[32];
+	static char	fmt[MAXFMTLEN];
 	int		n;
 
 	if (formatval(fmt, s)) {
@@ -598,7 +605,9 @@ main(int argc, char *argv[])
 		}
 	} else if (!check_sizes())
 		return(1);
-	if (o_header) {				/* write header */
+	if (o_header) {				/* write/add to header */
+		if (!i_header)
+			newheader("RADIANCE", stdout);
 		printargs(a, argv, stdout);
 		if (no_rows > 0)
 			printf("NROWS=%d\n", no_rows);

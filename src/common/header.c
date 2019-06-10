@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: header.c,v 2.31 2017/05/10 18:02:08 greg Exp $";
+static const char	RCSid[] = "$Id: header.c,v 2.34 2019/06/09 18:22:20 greg Exp $";
 #endif
 /*
  *  header.c - routines for reading and writing information headers.
@@ -170,11 +170,12 @@ printargs(		/* print arguments to a file */
 
 int
 formatval(			/* get format value (return true if format) */
-	char  *r,
+	char  fmt[MAXFMTLEN],
 	const char  *s
 )
 {
 	const char  *cp = FMTSTR;
+	char  *r = fmt;
 
 	while (*cp) if (*cp++ != *s++) return(0);
 	while (isspace(*s)) s++;
@@ -182,7 +183,7 @@ formatval(			/* get format value (return true if format) */
 	if (r == NULL) return(1);
 	do
 		*r++ = *s++;
-	while (*s && !isspace(*s));
+	while (*s && !isspace(*s) && r-fmt < MAXFMTLEN-1);
 	*r = '\0';
 	return(1);
 }
@@ -209,13 +210,17 @@ getheader(		/* get header from file */
 {
 	int   rtotal = 0;
 	char  buf[MAXLINE];
+	int   firstc = fgetc(fp);
 
+	if (!isprint(firstc))
+		return(-1);				/* messed up */
+	ungetc(firstc, fp);
 	for ( ; ; ) {
 		int	rval = 0;
 		buf[MAXLINE-2] = '\n';
 		if (fgets(buf, MAXLINE, fp) == NULL)
 			return(-1);
-		if (buf[buf[0]=='\r'] == '\n')
+		if (buf[buf[0]=='\r'] == '\n')		/* end of header? */
 			return(rtotal);
 		if (buf[MAXLINE-2] != '\n') {
 			ungetc(buf[MAXLINE-2], fp);	/* prevent false end */
@@ -230,7 +235,7 @@ getheader(		/* get header from file */
 
 struct check {
 	FILE	*fp;
-	char	fs[64];
+	char	fs[MAXFMTLEN];
 };
 
 
@@ -240,10 +245,11 @@ mycheck(			/* check a header line for format info. */
 	void  *cp
 )
 {
-	if (!formatval(((struct check*)cp)->fs, s)
-			&& ((struct check*)cp)->fp != NULL) {
-		fputs(s, ((struct check*)cp)->fp);
-	}
+	struct check	*scp = (struct check *)cp;
+
+	if (!formatval(scp->fs, s) && scp->fp != NULL)
+		fputs(s, scp->fp);
+
 	return(0);
 }
 
@@ -319,7 +325,7 @@ globmatch(			/* check for match of s against pattern p */
 int
 checkheader(
 	FILE  *fin,
-	char  *fmt,
+	char  fmt[MAXFMTLEN],
 	FILE  *fout
 )
 {

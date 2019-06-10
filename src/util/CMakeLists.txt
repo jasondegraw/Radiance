@@ -64,6 +64,9 @@ target_link_libraries(rfluxmtx rtrad)
 add_executable(evalglare evalglare.c pictool.c)
 target_link_libraries(evalglare rtrad libreetz)
 
+add_executable(radcompare radcompare.c)
+target_link_libraries(radcompare rtrad)
+
 if(X11_FOUND)
   add_executable(xglaresrc
     xglaresrc.c
@@ -79,11 +82,11 @@ endif()
 if(APPLE)
   find_library(OPENGL_gl_LIBRARY
     NAMES GL MesaGL
-    PATHS /usr/X11R6/lib
+    PATHS ${X11_LIB_SEARCH_PATH}
   )
   find_library(OPENGL_glu_LIBRARY
     NAMES GLU MesaGLU
-    PATHS /usr/X11R6/lib
+    PATHS ${X11_LIB_SEARCH_PATH}
   )
   set(OPENGL_LIBRARIES ${OPENGL_gl_LIBRARY} ${OPENGL_glu_LIBRARY})
 else()
@@ -121,6 +124,7 @@ install(TARGETS
   getinfo
   glarendx
   rad
+  radcompare
   ranimate
   ranimove
   rcollate
@@ -178,6 +182,7 @@ else()
     objview.pl
     raddepend.csh
     rlux.csh
+    rtpict.pl
     trad.wsh
     vinfo.csh
   )

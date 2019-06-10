@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: rhdisp3.c,v 3.16 2004/06/08 19:48:30 greg Exp $";
+static const char	RCSid[] = "$Id: rhdisp3.c,v 3.18 2018/10/05 19:19:16 greg Exp $";
 #endif
 /*
  * Holodeck beam support for display process
@@ -16,7 +16,7 @@ struct cellist {
 
 int
 npixels(vp, hr, vr, hp, bi)	/* compute appropriate nrays to evaluate */
-register VIEW	*vp;
+VIEW	*vp;
 int	hr, vr;
 HOLO	*hp;
 int	bi;
@@ -25,7 +25,7 @@ int	bi;
 	GCOORD	gc[2];
 	FVECT	cp[4], ip[4], pf, pb;
 	double	af, ab, sf2, sb2, dfb2, df2, db2, penalty;
-	register int	i;
+	int	i;
 					/* special case */
 	if (hr <= 0 | vr <= 0)
 		return(0);
@@ -37,8 +37,7 @@ int	bi;
 		pf[i] = 0.5*(cp[0][i] + cp[2][i]);
 	sf2 = 0.25*dist2(cp[0], cp[2]);	/* compute half diagonal length */
 	for (i = 0; i < 4; i++) {	/* compute visible quad */
-		viewloc(ip[i], vp, cp[i]);
-		if (ip[i][2] < 0.) {
+		if (viewloc(ip[i], vp, cp[i]) <= 0) {
 			af = 0;
 			goto getback;
 		}
@@ -64,8 +63,7 @@ getback:
 		pb[i] = 0.5*(cp[0][i] + cp[2][i]);
 	sb2 = 0.25*dist2(cp[0], cp[2]);	/* compute half diagonal length */
 	for (i = 0; i < 4; i++) {	/* compute visible quad */
-		viewloc(ip[i], &vrev, cp[i]);
-		if (ip[i][2] < 0.) {
+		if (viewloc(ip[i], &vrev, cp[i]) <= 0) {
 			ab = 0;
 			goto finish;
 		}
@@ -103,7 +101,7 @@ finish:		/* compute penalty based on dist. sightline - viewpoint */
 int
 visit_cells(orig, pyrd, hp, vf, dp)	/* visit cells within a pyramid */
 FVECT	orig, pyrd[4];		/* pyramid ray directions in clockwise order */
-register HOLO	*hp;
+HOLO	*hp;
 int	(*vf)();
 char	*dp;
 {
@@ -112,7 +110,7 @@ char	*dp;
 	FVECT	gp, pn[4], lo, ld;
 	double	po[4], lbeg, lend, d, t;
 	GCOORD	gc, gc2[2];
-	register int	i;
+	int	i;
 					/* figure out whose side we're on */
 	hdgrid(gp, hp, orig);
 	for (i = 0; i < 3; i++) {
@@ -181,8 +179,8 @@ char	*dp;
 
 
 sect_behind(hp, vp)		/* check if section is "behind" viewpoint */
-register HOLO	*hp;
-register VIEW	*vp;
+HOLO	*hp;
+VIEW	*vp;
 {
 	FVECT	hcent;
 					/* compute holodeck section center */
@@ -199,7 +197,7 @@ FVECT	org, dir[4];
 HOLO	*hp;
 VIEW	*vp;
 {
-	register int	i;
+	int	i;
 					/* check view type */
 	if (vp->type == VT_PAR)
 		return(0);
@@ -236,7 +234,7 @@ VIEW	*vp;
 int
 addcell(gcp, cl)		/* add a cell to a list */
 GCOORD	*gcp;
-register struct cellist	*cl;
+struct cellist	*cl;
 {
 	*(cl->cl+cl->n) = *gcp;
 	cl->n++;
@@ -246,9 +244,9 @@ register struct cellist	*cl;
 
 int
 cellcmp(gcp1, gcp2)		/* visit_cells() cell ordering */
-register GCOORD	*gcp1, *gcp2;
+GCOORD	*gcp1, *gcp2;
 {
-	register int	c;
+	int	c;
 
 	if ((c = gcp1->w - gcp2->w))
 		return(c);
@@ -261,7 +259,7 @@ register GCOORD	*gcp1, *gcp2;
 GCOORD *
 getviewcells(np, hp, vp)	/* get ordered cell list for section view */
 int	*np;		/* returned number of cells (negative if reversed) */
-register HOLO	*hp;
+HOLO	*hp;
 VIEW	*vp;
 {
 	FVECT	org, dir[4];
@@ -303,12 +301,12 @@ memerr:
 }
 
 
-extern void
+void
 gridlines(			/* run through holodeck section grid lines */
 	void	(*f)(FVECT wp[2])
 )
 {
-	register int	hd, w, i;
+	int	hd, w, i;
 	int	g0, g1;
 	FVECT	wp[2], mov;
 	double	d;

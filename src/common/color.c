@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: color.c,v 2.17 2014/05/31 20:13:31 greg Exp $";
+static const char	RCSid[] = "$Id: color.c,v 2.21 2019/05/27 15:44:26 greg Exp $";
 #endif
 /*
  *  color.c - routines for color calculations.
@@ -17,8 +17,10 @@ static const char	RCSid[] = "$Id: color.c,v 2.17 2014/05/31 20:13:31 greg Exp $"
 #ifdef getc_unlocked		/* avoid horrendous overhead of flockfile */
 #undef getc
 #undef putc
+#undef ferror
 #define getc    getc_unlocked
 #define putc    putc_unlocked
+#define ferror	ferror_unlocked
 #endif
 
 #define  MINELEN	8	/* minimum scanline length for encoding */
@@ -34,12 +36,11 @@ tempbuffer(			/* get a temporary buffer */
 	static char  *tempbuf = NULL;
 	static unsigned  tempbuflen = 0;
 
-	if (len > tempbuflen) {
-		if (tempbuflen > 0)
-			tempbuf = (char *)realloc((void *)tempbuf, len);
-		else
-			tempbuf = (char *)malloc(len);
-		tempbuflen = tempbuf==NULL ? 0 : len;
+	if (!len | (len > tempbuflen)) {
+		if (tempbuflen)
+			free(tempbuf);
+		tempbuf = len ? (char *)malloc(len) : (char *)NULL;
+		tempbuflen = len*(tempbuf != NULL);
 	}
 	return(tempbuf);
 }
@@ -61,18 +62,18 @@ fwritecolrs(			/* write out a colr scanline */
 	putc(2, fp);
 	putc(2, fp);
 	putc(len>>8, fp);
-	putc(len&255, fp);
+	putc(len&0xff, fp);
 					/* put components seperately */
 	for (i = 0; i < 4; i++) {
 	    for (j = 0; j < len; j += cnt) {	/* find next run */
 		for (beg = j; beg < len; beg += cnt) {
-		    for (cnt = 1; cnt < 127 && beg+cnt < len &&
+		    for (cnt = 1; (cnt < 127) & (beg+cnt < len) &&
 			    scanline[beg+cnt][i] == scanline[beg][i]; cnt++)
 			;
 		    if (cnt >= MINRUN)
 			break;			/* long enough */
 		}
-		if (beg-j > 1 && beg-j < MINRUN) {
+		if ((beg-j > 1) & (beg-j < MINRUN)) {
 		    c2 = j+1;
 		    while (scanline[c2++][i] == scanline[j][i])
 			if (c2 == beg) {	/* short run */
@@ -100,31 +101,31 @@ fwritecolrs(			/* write out a colr scanline */
 
 
 static int
-oldreadcolrs(			/* read in an old colr scanline */
+oldreadcolrs(			/* read in an old-style colr scanline */
 	COLR  *scanline,
 	int  len,
 	FILE  *fp
 )
 {
-	int  rshift;
+	int  rshift = 0;
 	int  i;
-	
-	rshift = 0;
 	
 	while (len > 0) {
 		scanline[0][RED] = getc(fp);
 		scanline[0][GRN] = getc(fp);
 		scanline[0][BLU] = getc(fp);
-		scanline[0][EXP] = getc(fp);
-		if (feof(fp) || ferror(fp))
+		scanline[0][EXP] = i = getc(fp);
+		if (i == EOF)
 			return(-1);
-		if (scanline[0][RED] == 1 &&
-				scanline[0][GRN] == 1 &&
-				scanline[0][BLU] == 1) {
-			for (i = scanline[0][EXP] << rshift; i > 0; i--) {
+		if (scanline[0][GRN] == 1 &&
+				(scanline[0][RED] == 1) &
+				(scanline[0][BLU] == 1)) {
+			i = scanline[0][EXP] << rshift;
+			while (i--) {
 				copycolr(scanline[0], scanline[-1]);
+				if (--len <= 0)
+					return(0);
 				scanline++;
-				len--;
 			}
 			rshift += 8;
 		} else {
@@ -159,7 +160,7 @@ freadcolrs(			/* read in an encoded colr scanline */
 	scanline[0][BLU] = getc(fp);
 	if ((i = getc(fp)) == EOF)
 		return(-1);
-	if (scanline[0][GRN] != 2 || scanline[0][BLU] & 128) {
+	if ((scanline[0][GRN] != 2) | ((scanline[0][BLU] & 0x80) != 0)) {
 		scanline[0][RED] = 2;
 		scanline[0][EXP] = i;
 		return(oldreadcolrs(scanline+1, len-1, fp));
@@ -237,10 +238,10 @@ freadscan(			/* read in a scanline */
 	colr_color(scanline[0], clrscan[0]);
 	while (--len > 0) {
 		scanline++; clrscan++;
-		if (clrscan[0][RED] == clrscan[-1][RED] &&
-			    clrscan[0][GRN] == clrscan[-1][GRN] &&
-			    clrscan[0][BLU] == clrscan[-1][BLU] &&
-			    clrscan[0][EXP] == clrscan[-1][EXP])
+		if (clrscan[0][GRN] == clrscan[-1][GRN] &&
+			    (clrscan[0][RED] == clrscan[-1][RED]) &
+			    (clrscan[0][BLU] == clrscan[-1][BLU]) &
+			    (clrscan[0][EXP] == clrscan[-1][EXP]))
 			copycolor(scanline[0], scanline[-1]);
 		else
 			colr_color(scanline[0], clrscan[0]);
@@ -269,7 +270,7 @@ setcolr(			/* assign a short color value */
 		return;
 	}
 
-	d = frexp(d, &e) * 255.9999 / d;
+	d = frexp(d, &e) * 256.0 / d;
 
 	if (r > 0.0)
 		clr[RED] = r * d;
@@ -318,7 +319,7 @@ bigdiff(				/* c1 delta c2 > md? */
 
 	for (i = 0; i < 3; i++)
 		if (colval(c1,i)-colval(c2,i) > md*colval(c2,i) ||
-			colval(c2,i)-colval(c1,i) > md*colval(c1,i))
+				colval(c2,i)-colval(c1,i) > md*colval(c1,i))
 			return(1);
 	return(0);
 }

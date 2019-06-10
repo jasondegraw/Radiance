@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: m_mist.c,v 2.18 2014/07/08 18:25:00 greg Exp $";
+static const char RCSid[] = "$Id: m_mist.c,v 2.20 2019/02/13 02:38:26 greg Exp $";
 #endif
 /*
  * Mist volumetric material.
@@ -218,7 +218,9 @@ m_mist(		/* process a ray entering or leaving some mist */
 	}
 	rayvalue(&p);				/* calls rayparticipate() */
 	copycolor(r->rcol, p.rcol);		/* return value */
-	r->rt = r->rot + p.rt;
+	copycolor(r->mcol, p.mcol);
+	r->rmt = r->rot + p.rmt;
+	r->rxt = r->rot + p.rxt;
 	return(1);
 memerr:
 	error(SYSTEM, "out of memory in m_mist");

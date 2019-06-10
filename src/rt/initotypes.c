@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: initotypes.c,v 2.20 2018/01/09 05:01:15 greg Exp $";
+static const char RCSid[] = "$Id: initotypes.c,v 2.26 2019/04/18 22:58:03 greg Exp $";
 #endif
 /*
  * Initialize ofun[] list for renderers
@@ -63,7 +63,9 @@ initotypes(void)			/* initialize ofun array */
 	ofun[MAT_DIRECT2].funp = m_direct;
 	ofun[MAT_CLIP].funp = m_clip;
 	ofun[MAT_BRTDF].funp = m_brdf;
-	ofun[MAT_BSDF].funp = m_bsdf;
+	ofun[MAT_BSDF].funp = 
+	ofun[MAT_ABSDF].funp = m_bsdf;
+	ofun[MAT_ABSDF].flags |= T_TRANSP;
 	ofun[MAT_PFUNC].funp =
 	ofun[MAT_MFUNC].funp =
 	ofun[MAT_PDATA].funp =
@@ -72,8 +74,10 @@ initotypes(void)			/* initialize ofun array */
 	ofun[MAT_TDATA].funp = m_brdf2;
 	ofun[MAT_PFUNC].flags |= T_OPAQUE;
 	ofun[MAT_MFUNC].flags |= T_OPAQUE;
+	ofun[MAT_TFUNC].flags |= T_OPAQUE;
 	ofun[MAT_PDATA].flags |= T_OPAQUE;
 	ofun[MAT_MDATA].flags |= T_OPAQUE;
+	ofun[MAT_TDATA].flags |= T_OPAQUE;
 	ofun[TEX_FUNC].funp = t_func;
 	ofun[TEX_DATA].funp = t_data;
 	ofun[PAT_CFUNC].funp = p_cfunc;
@@ -91,10 +95,36 @@ initotypes(void)			/* initialize ofun array */
 
 
 int
-o_default(OBJREC *o, RAY *r)			/* default action is error */
+o_default(OBJREC *o, RAY *r)		/* default action is error */
 {
 	objerror(o, CONSISTENCY, "unexpected object call");
-				/* unused call to load freeobjmem.o */
+					/* unused call to load freeobjmem.o */
 	free_objs(0, 0);
 	return(0);
+}
+
+
+OBJREC *	
+findmaterial(OBJREC *o)			/* find an object's actual material */
+{
+	while (!ismaterial(o->otype)) {
+		if (o->otype == MOD_ALIAS && o->oargs.nsargs) {
+			OBJECT  aobj;
+			OBJREC  *ao;
+			aobj = lastmod(objndx(o), o->oargs.sarg[0]);
+			if (aobj < 0)
+				objerror(o, USER, "bad reference");
+					/* recursive check on alias branch */
+			if ((ao = findmaterial(objptr(aobj))) != NULL)
+				return(ao);
+		}
+		if (o->omod == OVOID) {
+					/* void mixture de facto material? */
+			if (ismixture(o->otype))
+				break;
+			return(NULL);	/* else no material found */
+		}
+		o = objptr(o->omod);
+	}
+	return(o);
 }

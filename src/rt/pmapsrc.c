@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: pmapsrc.c,v 2.13 2016/05/17 17:39:47 rschregle Exp $";
+static const char RCSid[] = "$Id: pmapsrc.c,v 2.17 2018/11/08 00:54:07 greg Exp $";
 #endif
 /* 
    ==================================================================
@@ -19,16 +19,16 @@ static const char RCSid[] = "$Id: pmapsrc.c,v 2.13 2016/05/17 17:39:47 rschregle
 #include "pmap.h"
 #include "pmaprand.h"
 #include "otypes.h"
+#include "otspecial.h"
 
-
-
-SRCREC *photonPorts = NULL;             /* Photon port list */
+/* List of photon port modifier names */
+char *photonPortList [MAXSET + 1] = {NULL};
+/* Photon port objects (with modifiers in photonPortMods) */
+SRCREC *photonPorts = NULL;
 unsigned numPhotonPorts = 0;
 
 void (*photonPartition [NUMOTYPE]) (EmissionMap*);
 void (*photonOrigin [NUMOTYPE]) (EmissionMap*);
-
-extern OBJECT ambset [];
 
    
 
@@ -521,15 +521,18 @@ static void cylPhotonOrigin (EmissionMap* emap)
 
 
 
-void getPhotonPorts ()
-/* Find geometry declared as photon ports */
+void getPhotonPorts (char **portList)
+/* Find geometry declared as photon ports from modifiers in portList */
 {
    OBJECT i;
    OBJREC *obj, *mat;
+   char **lp;   
    
-   /* Check for missing port modifiers */
-   if (!ambset [0])
-      error(USER, "no photon ports");
+   /* Init photon port objects */
+   photonPorts = NULL;
+   
+   if (!portList [0])
+      return;
    
    for (i = 0; i < nobjects; i++) {
       obj = objptr(i);
@@ -537,24 +540,27 @@ void getPhotonPorts ()
       
       /* Check if object is a surface and NOT a light source (duh) and
        * resolve its material via any aliases, then check for inclusion in
-       * port modifier list */
-      if (issurface(obj -> otype) && mat && !islight(mat -> otype) && 
-          inset(ambset, objndx(mat))) {
-         /* Add photon port */
-         photonPorts = (SRCREC*)realloc(photonPorts, 
-                                        (numPhotonPorts + 1) * 
-                                        sizeof(SRCREC));
-         if (!photonPorts) 
-            error(USER, "can't allocate photon ports");
-            
-         photonPorts [numPhotonPorts].so = obj;
-         photonPorts [numPhotonPorts].sflags = 0;
+       * modifier list */
+      if (issurface(obj -> otype) && mat && !islight(mat -> otype)) {
+         for (lp = portList; *lp && strcmp(mat -> oname, *lp); lp++);
          
-         if (!sfun [obj -> otype].of || !sfun[obj -> otype].of -> setsrc)
-            objerror(obj, USER, "illegal photon port");
+         if (*lp) {
+            /* Add photon port */
+            photonPorts = (SRCREC*)realloc(photonPorts, 
+                                           (numPhotonPorts + 1) * 
+                                           sizeof(SRCREC));
+            if (!photonPorts) 
+               error(USER, "can't allocate photon ports");
             
-         setsource(photonPorts + numPhotonPorts, obj);
-         numPhotonPorts++;
+            photonPorts [numPhotonPorts].so = obj;
+            photonPorts [numPhotonPorts].sflags = 0;
+         
+            if (!sfun [obj -> otype].of || !sfun[obj -> otype].of -> setsrc)
+               objerror(obj, USER, "illegal photon port");
+         
+            setsource(photonPorts + numPhotonPorts, obj);
+            numPhotonPorts++;
+         }
       }
    }
    
@@ -757,12 +763,13 @@ void emitPhoton (const EmissionMap* emap, RAY* ray)
       emitted photon to break up clustering artifacts */
    photonOrigin [emap -> src -> so -> otype] ((EmissionMap*)emap);
    /* If we have a local glow source with a maximum radius, then
-      restrict our photon to the specified distance (otherwise no limit) */
+      restrict our photon to the specified distance, otherwise we set
+      the limit imposed by photonMaxDist (or no limit if 0) */
    if (mod -> otype == MAT_GLOW && !(emap -> src -> sflags & SDISTANT)
 		&& mod -> oargs.farg[3] > FTINY)
       ray -> rmax = mod -> oargs.farg[3];
    else
-      ray -> rmax = 0;
+      ray -> rmax = photonMaxDist;
    rayorigin(ray, PRIMARY, NULL, NULL);
    
    if (!emap -> numSamples) {

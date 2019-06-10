@@ -1,5 +1,5 @@
 #ifndef lint
-static const char	RCSid[] = "$Id: ra_ps.c,v 2.28 2004/03/28 20:33:14 schorsch Exp $";
+static const char	RCSid[] = "$Id: ra_ps.c,v 2.30 2018/08/02 18:33:47 greg Exp $";
 #endif
 /*
  *  Radiance picture to PostScript file translator -- one way!
@@ -11,6 +11,7 @@ static const char	RCSid[] = "$Id: ra_ps.c,v 2.28 2004/03/28 20:33:14 schorsch Ex
 #include  <ctype.h>
 
 #include  "platform.h"
+#include  "rtio.h"
 #include  "color.h"
 #include  "resolu.h"
 
@@ -79,7 +80,7 @@ headline(		/* check header line */
 	void	*p
 )
 {
-	char  fmt[32];
+	char  fmt[MAXFMTLEN];
 
 	if (isformat(s)) {
 		formatval(fmt, s);

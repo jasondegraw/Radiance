@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: rfluxmtx.c,v 2.45 2017/05/13 01:50:54 greg Exp $";
+static const char RCSid[] = "$Id: rfluxmtx.c,v 2.47 2019/03/03 17:01:13 greg Exp $";
 #endif
 /*
  * Calculate flux transfer matrix or matrices using rcontrib
@@ -18,7 +18,9 @@ static const char RCSid[] = "$Id: rfluxmtx.c,v 2.45 2017/05/13 01:50:54 greg Exp
 #include "triangulate.h"
 #include "platform.h"
 
-#define MAXRCARG	512
+#ifndef MAXRCARG
+#define MAXRCARG	10000
+#endif
 
 char		*progname;		/* global argv[0] */
 
@@ -659,7 +661,7 @@ sample_origin(PARAMS *p, FVECT orig, const FVECT rdir, double x)
 		projsa[i] = -DOT(sp->snrm, rdir) * sp->area;
 		tarea += projsa[i] *= (double)(projsa[i] > FTINY);
 	}
-	if (tarea <= FTINY) {		/* wrong side of sender? */
+	if (tarea < 0) {		/* wrong side of sender? */
 		fputs(progname, stderr);
 		fputs(": internal - sample behind all sender elements!\n",
 				stderr);

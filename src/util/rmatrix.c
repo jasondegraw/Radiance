@@ -1,5 +1,5 @@
 #ifndef lint
-static const char RCSid[] = "$Id: rmatrix.c,v 2.25 2017/08/28 15:59:46 greg Exp $";
+static const char RCSid[] = "$Id: rmatrix.c,v 2.30 2018/10/19 00:21:31 greg Exp $";
 #endif
 /*
  * General matrix operations.
@@ -81,7 +81,7 @@ static int
 get_dminfo(char *s, void *p)
 {
 	RMATRIX	*ip = (RMATRIX *)p;
-	char	fmt[64];
+	char	fmt[MAXFMTLEN];
 	int	i;
 
 	if (headidval(fmt, s))
@@ -146,20 +146,12 @@ rmx_load_float(RMATRIX *rm, FILE *fp)
 static int
 rmx_load_double(RMATRIX *rm, FILE *fp)
 {
-	int	i, j, k;
-	double	val[100];
+	int	i, j;
 
-	if (rm->ncomp > 100) {
-		fputs("Unsupported # components in rmx_load_double()\n", stderr);
-		exit(1);
-	}
 	for (i = 0; i < rm->nrows; i++)
-	    for (j = 0; j < rm->ncols; j++) {
-		if (getbinary(val, sizeof(val[0]), rm->ncomp, fp) != rm->ncomp)
+	    for (j = 0; j < rm->ncols; j++)
+		if (getbinary(&rmx_lval(rm,i,j,0), sizeof(double), rm->ncomp, fp) != rm->ncomp)
 		    return(0);
-	        for (k = rm->ncomp; k--; )
-		     rmx_lval(rm,i,j,k) = val[k];
-	    }
 	return(1);
 }
 
@@ -298,12 +290,15 @@ loaderr:					/* should report error? */
 static int
 rmx_write_ascii(const RMATRIX *rm, FILE *fp)
 {
+	const char	*fmt = (rm->dtype == DTfloat) ? " %.7e" :
+			(rm->dtype == DTrgbe) | (rm->dtype == DTxyze) ? " %.3e" :
+				" %.15e" ;
 	int	i, j, k;
 
 	for (i = 0; i < rm->nrows; i++) {
 	    for (j = 0; j < rm->ncols; j++) {
 	        for (k = 0; k < rm->ncomp; k++)
-		    fprintf(fp, " %.15e", rmx_lval(rm,i,j,k));
+		    fprintf(fp, fmt, rmx_lval(rm,i,j,k));
 		fputc('\t', fp);
 	    }
 	    fputc('\n', fp);
@@ -334,37 +329,29 @@ rmx_write_float(const RMATRIX *rm, FILE *fp)
 static int
 rmx_write_double(const RMATRIX *rm, FILE *fp)
 {
-	int	i, j, k;
-	double	val[100];
+	int	i, j;
 
-	if (rm->ncomp > 100) {
-		fputs("Unsupported # components in rmx_write_double()\n", stderr);
-		exit(1);
-	}
 	for (i = 0; i < rm->nrows; i++)
-	    for (j = 0; j < rm->ncols; j++) {
-	        for (k = rm->ncomp; k--; )
-		    val[k] = rmx_lval(rm,i,j,k);
-		if (putbinary(val, sizeof(val[0]), rm->ncomp, fp) != rm->ncomp)
+	    for (j = 0; j < rm->ncols; j++)
+		if (putbinary(&rmx_lval(rm,i,j,0), sizeof(double), rm->ncomp, fp) != rm->ncomp)
 			return(0);
-	    }
 	return(1);
 }
 
 static int
 rmx_write_rgbe(const RMATRIX *rm, FILE *fp)
 {
-	COLOR	*scan = (COLOR *)malloc(sizeof(COLOR)*rm->ncols);
+	COLR	*scan = (COLR *)malloc(sizeof(COLR)*rm->ncols);
 	int	i, j;
 
 	if (scan == NULL)
 		return(0);
 	for (i = 0; i < rm->nrows; i++) {
 	    for (j = rm->ncols; j--; )
-	        setcolor(scan[j],	rmx_lval(rm,i,j,0),
+	        setcolr(scan[j],	rmx_lval(rm,i,j,0),
 					rmx_lval(rm,i,j,1),
 					rmx_lval(rm,i,j,2)	);
-	    if (fwritescan(scan, rm->ncols, fp) < 0) {
+	    if (fwritecolrs(scan, rm->ncols, fp) < 0) {
 		free(scan);
 		return(0);
 	    }
@@ -627,6 +614,8 @@ rmx_scale(RMATRIX *rm, const double sf[])
 		for (k = rm->ncomp; k--; )
 		    rmx_lval(rm,i,j,k) *= sf[k];
 
+	if (rm->info)
+		rmx_addinfo(rm, "Applied scalar\n");
 	return(1);
 }
 
@@ -642,6 +631,13 @@ rmx_transform(const RMATRIX *msrc, int n, const double cmat[])
 	dnew = rmx_alloc(msrc->nrows, msrc->ncols, n);
 	if (dnew == NULL)
 		return(NULL);
+	if (msrc->info) {
+		char	buf[128];
+		sprintf(buf, "Applied %dx%d matrix transform\n",
+				dnew->ncomp, msrc->ncomp);
+		rmx_addinfo(dnew, msrc->info);
+		rmx_addinfo(dnew, buf);
+	}
 	dnew->dtype = msrc->dtype;
 	for (i = dnew->nrows; i--; )
 	    for (j = dnew->ncols; j--; )

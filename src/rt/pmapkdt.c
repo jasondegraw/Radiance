@@ -8,13 +8,15 @@
        supported by the Swiss National Science Foundation (SNSF, #147053)
    ======================================================================
    
-   $Id: pmapkdt.c,v 1.2 2017/08/14 21:12:10 rschregle Exp $
+   $Id: pmapkdt.c,v 1.5 2018/11/08 00:54:07 greg Exp $
 */
 
 
 
 #include "pmapdata.h"   /* Includes pmapkdt.h */
 #include "source.h"
+#include "otspecial.h"
+#include "random.h"
 
 
 
@@ -346,20 +348,24 @@ static void kdT_FindNearest (PhotonMap *pmap, const float pos [3],
    if (norm && DOT(norm, p -> norm) <= PMAP_NORM_TOL * 127 * frandom())
       return;
       
-   if (isContribPmap(pmap) && pmap -> srcContrib) {
-      /* Lookup in contribution photon map */
-      OBJREC *srcMod; 
-      const int srcIdx = photonSrcIdx(pmap, p);
-      
-      if (srcIdx < 0 || srcIdx >= nsources)
-         error(INTERNAL, "invalid light source index in photon map");
-      
-      srcMod = findmaterial(source [srcIdx].so);
+   if (isContribPmap(pmap)) {
+      /* Lookup in contribution photon map; filter according to emitting
+       * light source if contrib list set, else accept all */
+       
+      if (pmap -> srcContrib) {
+         OBJREC *srcMod; 
+         const int srcIdx = photonSrcIdx(pmap, p);
+         
+         if (srcIdx < 0 || srcIdx >= nsources)
+            error(INTERNAL, "invalid light source index in photon map");
+         
+         srcMod = findmaterial(source [srcIdx].so);
 
-      /* Reject photon if contributions from light source which emitted it
-       * are not sought */
-      if (!lu_find(pmap -> srcContrib, srcMod -> oname) -> data)
-         return;
+         /* Reject photon if contributions from light source which emitted it
+          * are not sought */
+         if (!lu_find(pmap -> srcContrib, srcMod -> oname) -> data)
+            return;
+      }
 
       /* Reject non-caustic photon if lookup for caustic contribs */
       if (pmap -> lookupCaustic & !p -> caustic)
@@ -420,8 +426,9 @@ void kdT_FindPhotons (struct PhotonMap *pmap, const FVECT pos,
    
    /* Photon pos & normal stored at lower precision */
    VCOPY(p, pos);
-   VCOPY(n, norm);
-   kdT_FindNearest(pmap, p, n, 1);
+   if (norm)
+      VCOPY(n, norm);
+   kdT_FindNearest(pmap, p, norm ? n : NULL, 1);
 }
 
 
@@ -460,7 +467,7 @@ static void kdT_Find1Nearest (PhotonMap *pmap, const float pos [3],
    d2 = DOT(dv, dv);
    
    if (d2 < pmap -> maxDist2 && 
-       DOT(norm, p -> norm) > PMAP_NORM_TOL * 127 * frandom()) {
+       (!norm || DOT(norm, p -> norm) > PMAP_NORM_TOL * 127 * frandom())) {
       /* Closest photon so far with similar normal. We allow for tolerance
        * to account for perturbation in the latter; note the photon normal
        * is coded in the range [-127,127], hence we factor this in  */
@@ -479,8 +486,9 @@ void kdT_Find1Photon (struct PhotonMap *pmap, const FVECT pos,
    
    /* Photon pos & normal stored at lower precision */
    VCOPY(p, pos);
-   VCOPY(n, norm);
-   kdT_Find1Nearest(pmap, p, n, &pnn, 1);
+   if (norm)
+      VCOPY(n, norm);   
+   kdT_Find1Nearest(pmap, p, norm ? n : NULL, &pnn, 1);
    memcpy(photon, pnn, sizeof(Photon));
 }
 
